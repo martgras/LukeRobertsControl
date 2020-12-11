@@ -1,0 +1,174 @@
+
+#include <string>
+#include <Arduino.h>
+
+#include <WiFi.h>
+#include <AsyncTCP.h>
+
+#include <ESPAsyncWebServer.h>
+#include <ArduinoOTA.h>
+#include <BLEDevice.h>
+
+AsyncWebServer server(80);
+
+const char *ssid = "Pyr7";
+const char *password = "AnjaPetraMartinTim.1966";
+const char *hostname = "lrdimmer";
+const char *PARAM_CMD = "cmnd";
+
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
+
+RTC_DATA_ATTR bool powerstate = false;
+RTC_DATA_ATTR int16_t dimlevel = 50;
+int get_power_state() { return powerstate ? 1 : 0; }
+
+void set_powerstate(bool value) { powerstate = value; }
+int set_powerstate(const String &value) {
+  int retvalue = 0;
+  if (value.equals("0") || value.equals("off") || value.equals("false")) {
+    retvalue = 1;
+    set_powerstate(false);
+  } else if (value.equals("1") || value.equals("on") || value.equals("true")) {
+    retvalue = 1;
+    set_powerstate(true);
+  } else if (value.equals("toggle")) {
+    retvalue = 1;
+    set_powerstate(!powerstate);
+  }
+  return retvalue;
+}
+
+int get_dimmer_value() { return dimlevel; }
+
+int set_dimmer_value(int numvalue) {
+  dimlevel = numvalue;
+  if (dimlevel > 100) {
+    dimlevel = 100;
+  }
+  if (dimlevel < 0) {
+    dimlevel = 0;
+  }
+
+  return dimlevel;
+}
+
+int set_dimmer_value(const String &value) {
+  int retvalue = 0;
+  char *p;
+  long numvalue = strtol(value.c_str(), &p, 10);
+  if (*p) {
+    // p points to the char after the last digit. so if value is a number it
+    // points to the terminating \0
+    if (value.equals("+") || value.equals("up")) {
+      retvalue = 1;
+      dimlevel += 10;
+    } else {
+      if (value.equals("-") || value.equals("down")) {
+        retvalue = 1;
+        dimlevel -= 10;
+      }
+    }
+  } else {
+    retvalue = 1;
+    dimlevel = (int)numvalue;
+  }
+  if (retvalue) {
+    set_dimmer_value(dimlevel);
+  }
+  return retvalue;
+}
+
+void connect_wifi() {
+  
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  WiFi.setHostname(hostname);
+  WiFi.begin(ssid, password);
+  auto result = WiFi.waitForConnectResult() 
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.printf("WiFi Failed!\n");
+    return;
+  }
+
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hello, world");
+  });
+
+  // Send a GET request to <IP>/get?message=<message>
+  server.on("/cm", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String message = "";
+    if (request->hasParam(PARAM_CMD)) {
+      message = request->getParam(PARAM_CMD)->value();
+      message.trim();
+      message.toLowerCase();
+      auto param = message.indexOf(' ');
+      if (param > 0) {
+        auto value = message.substring(param);
+        auto cmd = message.substring(0, param);
+        message = "CMD: " + cmd + " Value = " + value;
+        set_powerstate(value);
+      } else {
+        auto cmd = message;
+        message = "CMD: " + cmd;
+      }
+
+    } else {
+      message = "No message sent";
+    }
+    request->send(200, "text/plain", "GET: " + message);
+  });
+
+  ArduinoOTA.onStart([]() {
+              String type;
+              if (ArduinoOTA.getCommand() == U_FLASH)
+                type = "sketch";
+              else // U_SPIFFS
+                type = "filesystem";
+
+              // NOTE: if updating SPIFFS this would be the place to unmount
+              // SPIFFS using SPIFFS.end()
+              Serial.println("Start updating " + type);
+            })
+      .onEnd([]() { Serial.println("\nEnd"); })
+      .onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      })
+      .onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR)
+          Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR)
+          Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR)
+          Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR)
+          Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR)
+          Serial.println("End Failed");
+      });
+
+  ArduinoOTA.setHostname(hostname);
+  ArduinoOTA.begin();
+
+  log_i("OTA Ready");
+  log_i("IP address: %s",WiFi.localIP());
+  
+
+  server.onNotFound(notFound);
+
+  server.begin();
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  ArduinoOTA.handle();
+}

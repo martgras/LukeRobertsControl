@@ -1,0 +1,12 @@
+[usersettings]
+build_flags = -DWIFISID='"mywifi"'
+              -DWIFIPASSWORD='"mysecret-wifi-pwd"'
+              -DMQTTUSER='nullptr'
+              -DMQTTPASSWORD='nullptr'
+              -DHOSTNAME='"lrcontoller"'
+              -DDOMAINNAME='".local"'
+              -DMQTTHOST='"192.168.1.214"'
+              -DMQTTPORT=1883
+              -DNTP_SERVER='"europe.pool.ntp.org"'
+              -DTIMEZONE='"CET-1CEST,M3.5.0,M10.5.0/3"'
+              -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'
