@@ -141,6 +141,8 @@ static bool mqtt_reconnect() {
     log_i("mqtt connected");
     mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
+    mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
+    log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
 
     mqtt_client.beginPublish("homeassistant/light/LR01_LI_1/config",
                              strlen(MQTT_DISCOVERY), true);

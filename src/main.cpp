@@ -38,6 +38,7 @@ RTC_DATA_ATTR int16_t scene = 01;
 // publishing mqtt message is a blocking operation
 // use a task instead that sends queues messages
 
+BleGattClient ble_client;
 MqttPublish mqtt;
 
 class LR_Ble_Device {
@@ -49,53 +50,120 @@ public:
 
   static void report_mqtt() {}
 
-  LR_Ble_Device() {
-    ble_default_commands_[kBrightness] = {{0xA0, 0x01, 0x03, 0x00}, 4, false};
-    ble_default_commands_[kBrightness].report_to_mqtt = [this](int newval) {
-      char json[32];
-      //      snprintf(json, sizeof(json), "{\"DIMMER\": \"%d\"}",
-      //      this->brightness);
-      //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-      snprintf(json, sizeof(json), "%d", this->brightness);
-      mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
+  BleGattClient &gatt_client_;
 
-    };
+  LR_Ble_Device(BleGattClient &gatt_client) : gatt_client_(gatt_client) {
 
-    ble_default_commands_[kColortemp] = {
-        {0xA0, 0x01, 0x04, 0x00, 0x00}, 5, false};
-    ble_default_commands_[kColortemp].report_to_mqtt = [this](int) {
-      char json[32];
-      //      snprintf(json, sizeof(json), "{\"CT\": \"%d\"}",
-      //      this->colortemperature);
-      //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-      snprintf(json, sizeof(json), "%d", this->colortemperature);
-      mqtt.queue("stat/" HOSTNAME "/CT", json);
-    };
-    ble_default_commands_[kScene] = {{0xA0, 0x02, 0x05, 0x00}, 4, false};
-    ble_default_commands_[kScene].report_to_mqtt = [this](int) {
+    BleGattClient::BleCommand cmd;
+    cmd = {{0xA0, 0x01, 0x03, 0x00},
+           4,
+           false,
+           [&](int newval) {
+             char json[32];
+             //      snprintf(json, sizeof(json), "{\"DIMMER\": \"%d\"}",
+             //      this->brightness);
+             //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
+             snprintf(json, sizeof(json), "%d", brightness);
+             mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
+           }};
+    gatt_client_.queue_cmd(cmd, kBrightness, false);
 
-      if (this->power_state) {
-        char json[32];
-        //        snprintf(json, sizeof(json), "{\"SCENE\": \"%d\"}",
-        //                 this->current_scene);
-        //        mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-        snprintf(json, sizeof(json), "%d", this->current_scene);
-        mqtt.queue("stat/" HOSTNAME "/SCENE", json);
-      }
-    };
+    cmd = {{0xA0, 0x01, 0x04, 0x00, 0x00},
+           5,
+           false,
+           [&](int) {
+             char json[32];
+             //      snprintf(json, sizeof(json), "{\"CT\": \"%d\"}",
+             //      this->colortemperature);
+             //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
+             snprintf(json, sizeof(json), "%d", colortemperature);
+             mqtt.queue("stat/" HOSTNAME "/CT", json);
+           }};
+    gatt_client_.queue_cmd(cmd, kColortemp, false);
+
+    cmd = {{0xA0, 0x02, 0x05, 0x00},
+           4,
+           false,
+           [this](int) {
+             if (this->power_state) {
+               char json[32];
+               //        snprintf(json, sizeof(json), "{\"SCENE\": \"%d\"}",
+               //                 this->current_scene);
+               //        mqtt.queue("stat/" HOSTNAME "/RESULT", json);
+               snprintf(json, sizeof(json), "%d", this->current_scene);
+               mqtt.queue("stat/" HOSTNAME "/SCENE", json);
+             }
+           }};
+    gatt_client_.queue_cmd(cmd, kScene, false);
   }
+
   void set_dimmer(unsigned int new_dim_level) {
     if (new_dim_level > 99)
       new_dim_level = 99;
     if (new_dim_level < 0)
       new_dim_level = 0;
-    ble_default_commands_[kBrightness].is_dirty = brightness != new_dim_level;
+    gatt_client_.cached_commands[kBrightness].is_dirty =
+        brightness != new_dim_level;
     brightness = new_dim_level;
-    ble_default_commands_[kBrightness].data[3] = brightness;
+    gatt_client_.cached_commands[kBrightness].data[3] = brightness;
   }
 
   unsigned int switch_kelvin_mired(unsigned int value) {
     return (1000000 / value);
+  }
+
+  void set_intermmediate_light(uint8_t content_flag, uint16_t duration,
+                               uint8_t saturation, uint16_t hue,
+                               uint16_t kelvin, uint8_t brightness) {
+    BleGattClient::BleCommand cmd;
+    cmd.data[0] = 0xA0;
+    cmd.data[1] = 0x01;
+    cmd.data[2] = 0x02;
+    cmd.data[3] = content_flag;
+    cmd.data[4] = duration >> 8;
+    cmd.data[5] = duration & 0xFF;
+    brightness = uint(brightness * 2.55);
+    // hue or warmwhite mode ?
+    uint8_t brightness_pos = 8;
+    if (content_flag & 2) {
+      cmd.data[6] = kelvin >> 8;
+      cmd.data[7] = kelvin & 0xFF;
+      brightness_pos = 8;
+      this->brightness = brightness;
+      this->colortemperature = switch_kelvin_mired(kelvin);
+      cmd.on_send = [&](int) {
+        mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
+                   true);
+      };
+    } else {
+      cmd.data[6] = saturation;
+      cmd.data[7] = hue >> 8;
+      cmd.data[8] = hue & 0xFF;
+      brightness_pos = 9;
+      cmd.on_send = [&, saturation, hue, brightness](int newval) {
+        char json[32];
+        snprintf(json, sizeof(json), "%d", saturation);
+        mqtt.queue("stat/" HOSTNAME "/SATURATION", json);
+        snprintf(json, sizeof(json), "%d", hue);
+        mqtt.queue("stat/" HOSTNAME "/HUE", json);
+        snprintf(json, sizeof(json), "%d", brightness);
+        mqtt.queue("stat/" HOSTNAME "/BRIGHTNESS_UP", json);
+      };
+    }
+    cmd.data[brightness_pos] = brightness;
+    cmd.is_dirty = true;
+    cmd.size = brightness_pos;
+    gatt_client_.queue_cmd(cmd);
+  }
+
+  void set_intermmediate_uplight(uint16_t duration, uint8_t saturation,
+                                 uint16_t hue, uint8_t brightness) {
+    set_intermmediate_light(1, duration, saturation, hue, 0, brightness);
+  }
+
+  void set_intermmediate_downlight(uint16_t duration, uint16_t kelvin,
+                                   uint8_t brightness) {
+    set_intermmediate_light(2, duration, 0, 0, kelvin, brightness);
   }
 
   void set_colortemperature_mired(unsigned new_colortemperature) {
@@ -104,9 +172,9 @@ public:
     if (new_colortemperature > 416)
       new_colortemperature = 416;
     auto kelvin = switch_kelvin_mired(new_colortemperature);
-    ble_default_commands_[kColortemp].data[3] = kelvin >> 8;
-    ble_default_commands_[kColortemp].data[4] = kelvin & 0xFF;
-    ble_default_commands_[kColortemp].is_dirty =
+    gatt_client_.cached_commands[kColortemp].data[3] = kelvin >> 8;
+    gatt_client_.cached_commands[kColortemp].data[4] = kelvin & 0xFF;
+    gatt_client_.cached_commands[kColortemp].is_dirty =
         colortemperature != new_colortemperature;
     log_i("Color temperature to %d from %d (%d)", new_colortemperature,
           colortemperature, kelvin);
@@ -118,77 +186,44 @@ public:
       new_colortemperature = 4000;
     if (new_colortemperature < 2700)
       new_colortemperature = 2700;
-    ble_default_commands_[kColortemp].data[3] = new_colortemperature >> 8;
-    ble_default_commands_[kColortemp].data[4] = new_colortemperature & 0xFF;
-    ble_default_commands_[kColortemp].is_dirty =
+    gatt_client_.cached_commands[kColortemp].data[3] =
+        new_colortemperature >> 8;
+    gatt_client_.cached_commands[kColortemp].data[4] =
+        new_colortemperature & 0xFF;
+    gatt_client_.cached_commands[kColortemp].is_dirty =
         colortemperature != new_colortemperature;
     colortemperature = new_colortemperature;
   }
 
   void set_scene(unsigned int new_scene) {
     new_scene &= 0xFF;
-    ble_default_commands_[kScene].data[3] = new_scene;
-    ble_default_commands_[kScene].is_dirty = true; // current_scene !=
-                                                   // new_scene;
+    gatt_client_.cached_commands[kScene].data[3] = new_scene;
+    gatt_client_.cached_commands[kScene].is_dirty =
+        current_scene == 0 || current_scene != new_scene;
     current_scene = new_scene;
 
     brightness = SceneBrightnessMapper::map(current_scene);
-    ble_default_commands_[kBrightness].report_to_mqtt(brightness);
+    gatt_client_.cached_commands[kBrightness].on_send(brightness);
   }
 
   bool set_powerstate(bool new_power_state) {
-    ble_default_commands_[kScene].is_dirty = new_power_state != power_state;
+    gatt_client_.cached_commands[kScene].is_dirty =
+        new_power_state != power_state;
     power_state = new_power_state;
-    ble_default_commands_[kScene].data[3] =
+    gatt_client_.cached_commands[kScene].data[3] =
         (new_power_state ? current_scene : 0);
     return power_state;
   }
 
-  bool is_dirty() {
-    for (auto &b : ble_default_commands_) {
-      if (b.is_dirty) {
-        return true;
-      }
-    }
-    return !ble_send_queue_.empty();
-  }
-
   void send_custom(const uint8_t *data, size_t length) {
-    ble_data custom;
+    return;
+    BleGattClient::BleCommand custom;
     custom.is_dirty = true;
     custom.size = length;
     for (int i = 0; i < length && i < sizeof(custom.data); i++) {
       custom.data[i] = data[i];
     }
-    ble_send_queue_.push(custom);
-  }
-
-  void send_queued() {
-    bool needs_mqtt_result = false;
-    if (!sending) {
-      sending = true;
-      for (auto &b : ble_default_commands_) {
-        if (b.is_dirty) {
-          ble_send(b.data, b.size);
-          b.is_dirty = false;
-          b.report_to_mqtt(0);
-          needs_mqtt_result = true;
-          delay(50);
-        }
-      }
-      // Other pending commands
-      while (!ble_send_queue_.empty()) {
-        auto cmd = ble_send_queue_.front();
-        ble_send(cmd.data, cmd.size);
-        needs_mqtt_result = true;
-        delay(50);
-        ble_send_queue_.pop();
-      }
-      if (needs_mqtt_result) {
-        mqtt.queue("stat/" HOSTNAME "/RESULT", create_state_message(), true);
-      }
-      sending = false;
-    }
+    gatt_client_.queue_cmd(custom);
   }
 
   const char *create_state_message() {
@@ -211,30 +246,10 @@ public:
   }
 
   void loop() {
-    if (is_dirty()) {
-      static bool connecting = false;
-      if (!connecting) {
-        connecting = true;
-        log_i("trying to connect");
-        if (ble_connected || connect_to_server()) {
-          log_i("Connected to the BLE Server.");
-        } else {
-          log_i("Failed to connect to the BLE server"
-                "we will do.");
-        }
-        connecting = false;
-      }
-      static unsigned long last_sent = 0;
-      //    if (millis() - last_sent <  200) // throttle a bit:  wait 200 ms
-      //    between commands
-      {
-        if (ble_connected) {
-          send_queued();
-          last_sent = millis();
-          log_i("%ld Command sent", last_sent);
-        }
-      }
-    }
+    gatt_client_.loop([&]() {
+      mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
+                 true);
+    });
   }
 
   unsigned int colortemperature;
@@ -244,28 +259,15 @@ public:
 
 private:
   volatile bool sending = false;
-
-  portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
-
-  struct ble_data {
-    uint8_t data[16];
-    size_t size;
-    bool is_dirty;
-    Mqtt_Report_Function report_to_mqtt;
-  } ble_default_commands_[3];
-
-  std::queue<ble_data> ble_send_queue_;
 };
 
-LR_Ble_Device lr;
+LR_Ble_Device lr(ble_client);
 
 AsyncWebServer server(80);
 
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
-
-static bool pending_command = false;
 
 int get_power_state() { return lr.power_state ? 1 : 0; }
 
@@ -296,7 +298,6 @@ bool set_powerstate(const String &value) {
 int get_dimmer_value() { return lr.brightness; }
 
 int set_dimmer_value(int new_level) {
-  pending_command = false;
   dimlevel = new_level;
   if (new_level > 100) {
     new_level = 100;
@@ -306,8 +307,6 @@ int set_dimmer_value(int new_level) {
   }
   log_i("Set Dimmer Level to %d", new_level);
   lr.set_dimmer(new_level);
-
-  pending_command = true;
   dimlevel = new_level;
   return new_level;
 }
@@ -354,16 +353,14 @@ int set_dimmer_value(const String &value) {
 }
 
 int set_scene(int numvalue) {
-  pending_command = false;
   scene = numvalue & 0xFF;
-  if (scene > max_scenes && scene != 0xFF)
+  if (scene > scenes.size() && scene != 0xFF)
     scene = 1;
   if (scene < 1 && scene != 0xFF)
-    scene = max_scenes;
+    scene = scenes.size();
 
   log_i("Set Scene Level to %d", scene);
   lr.set_scene(scene);
-  pending_command = true;
   return scene;
 }
 
@@ -434,7 +431,6 @@ int set_scene_brightness(const String &value) {
 }
 
 int set_colortemperature(int numvalue) {
-  pending_command = false;
   colortemperature = numvalue;
   if (colortemperature > 416) {
     colortemperature = 416;
@@ -569,7 +565,7 @@ bool parse_command(const char *command) {
   } else if (cmd.equals("ota")) {
     AppUtils::setupOta();
     return true;
-  } else if (cmd.equals("mqttping")) {
+  } else if (cmd.equals("RESULT")) {
     last_mqttping = millis();
     log_i("got mqtt ping");
     return true;
@@ -672,10 +668,19 @@ void setup() {
     }
   }
   mqtt.start();
+  bool result;
+  int attempts = 0;
+  while (!(result = ble_client.connect_to_server(
+               []() { get_all_scenes(ble_client); }))) {
+    delay(1000);
+    if (attempts++ == 10) {
+      log_e("unable to connect to BLE Device - restarting");
+      ESP.restart();
+    }
+  }
 
-  lr_init();
-  if (connect_to_server(get_all_scenes)) {
-    auto initalscene = get_current_scene();
+  if (result) {
+    auto initalscene = get_current_scene(ble_client);
 
     if (initalscene == 0) {
       lr.power_state = false;
@@ -693,7 +698,10 @@ void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();
   mqtt.loop();
-  lr.loop();
+  ble_client.loop([&]() {
+    mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
+  });
+
   if (millis() - last_statemsg > 60000 * 5) {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
     mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
@@ -703,6 +711,7 @@ void loop() {
   if (millis() - last_mqttping > 60000 * 10) {
     mqtt.disconnect();
     delay(1000);
+    last_mqttping = millis();
     mqtt.mqtt_reconnect();
   }
 }
