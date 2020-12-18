@@ -6,23 +6,27 @@
 //#include <ETH.h>
 //#include <WiFi.h>
 #include <AsyncTCP.h>
-
+#include <SPIFFS.h>
 #include <ESPAsyncWebServer.h>
 #include <PubSubClient.h>
 
 #include "app_utils.h"
-#include <SPIFFS.h>
 #include "LukeRobertsBle.h"
 #include "esp_wifi.h"
 #include "WiFiGeneric.h"
-#include <SPIFFS.h>
 
 #include "webpages.h"
 
 #include "mqtt_handler.h"
 
-using namespace app_utils;
+#ifdef ROTARY
+#include "rotaryencoder.h"
+#endif
 
+using namespace app_utils;
+using namespace rotary_encoder;
+
+///#define RELAY_PIN GPIO_NUM_13
 WiFiClient network_client;
 AppUtils app;
 
@@ -31,14 +35,13 @@ extern uint8_t max_scenes;
 extern std::map<uint8_t, std::string> scenes;
 
 // RTC_DATA_ATTR bool powerstate = false;
-RTC_DATA_ATTR int16_t dimlevel = 50;
-RTC_DATA_ATTR int16_t colortemperature = 3000;
-RTC_DATA_ATTR int16_t scene = 01;
+// RTC_DATA_ATTR int16_t dimlevel = 50;
+// RTC_DATA_ATTR int16_t colortemperature = 3000;
+// RTC_DATA_ATTR int16_t scene = 01;
 
 // publishing mqtt message is a blocking operation
 // use a task instead that sends queues messages
 
-BleGattClient ble_client;
 MqttPublish mqtt;
 
 class LR_Ble_Device {
@@ -46,66 +49,70 @@ public:
   using Mqtt_Report_Function = std::function<void(int)>;
   using Task_function = std::function<void(void *)>;
 
-  enum slots { kBrightness = 0, kColortemp = 1, kScene = 2 };
+  enum slots { kScene = 0, kBrightness = 1, kColortemp = 2 };
 
-  static void report_mqtt() {}
+  struct State {
+    bool power;
+    uint8_t scene;
+    uint8_t brightness;
+    uint16_t mired;
+    uint16_t kelvin;
+  };
 
-  BleGattClient &gatt_client_;
+  const State &state() { return state_; }
+  BleGattClient &client() { return gatt_client_; }
 
-  LR_Ble_Device(BleGattClient &gatt_client) : gatt_client_(gatt_client) {
+  LR_Ble_Device() {
 
+    // Setup the cached commands
+    //
     BleGattClient::BleCommand cmd;
     cmd = {{0xA0, 0x01, 0x03, 0x00},
            4,
            false,
            [&](int newval) {
              char json[32];
-             //      snprintf(json, sizeof(json), "{\"DIMMER\": \"%d\"}",
-             //      this->brightness);
-             //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-             snprintf(json, sizeof(json), "%d", brightness);
+             snprintf(json, sizeof(json), "%d", state().brightness);
              mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
            }};
-    gatt_client_.queue_cmd(cmd, kBrightness, false);
+    gatt_client_.queue_cmd(cmd, (uint8_t)kBrightness, false);
 
     cmd = {{0xA0, 0x01, 0x04, 0x00, 0x00},
            5,
            false,
            [&](int) {
              char json[32];
-             //      snprintf(json, sizeof(json), "{\"CT\": \"%d\"}",
-             //      this->colortemperature);
-             //      mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-             snprintf(json, sizeof(json), "%d", colortemperature);
+             snprintf(json, sizeof(json), "%d", state().mired);
              mqtt.queue("stat/" HOSTNAME "/CT", json);
            }};
-    gatt_client_.queue_cmd(cmd, kColortemp, false);
+    gatt_client_.queue_cmd(cmd, (uint8_t)kColortemp, false);
 
     cmd = {{0xA0, 0x02, 0x05, 0x00},
            4,
            false,
-           [this](int) {
-             if (this->power_state) {
+           [&](int) {
+             if (state().power) {
                char json[32];
-               //        snprintf(json, sizeof(json), "{\"SCENE\": \"%d\"}",
-               //                 this->current_scene);
-               //        mqtt.queue("stat/" HOSTNAME "/RESULT", json);
-               snprintf(json, sizeof(json), "%d", this->current_scene);
+               snprintf(json, sizeof(json), "%d", state_.scene);
                mqtt.queue("stat/" HOSTNAME "/SCENE", json);
              }
            }};
-    gatt_client_.queue_cmd(cmd, kScene, false);
+    gatt_client_.queue_cmd(cmd, (uint8_t)kScene, false);
   }
 
-  void set_dimmer(unsigned int new_dim_level) {
+  uint8_t set_dimmer(unsigned int new_dim_level, bool force_dirty = false) {
     if (new_dim_level > 99)
       new_dim_level = 99;
     if (new_dim_level < 0)
       new_dim_level = 0;
-    gatt_client_.cached_commands[kBrightness].is_dirty =
-        brightness != new_dim_level;
-    brightness = new_dim_level;
-    gatt_client_.cached_commands[kBrightness].data[3] = brightness;
+    gatt_client_.cached_commands[kBrightness].is_dirty |=
+        force_dirty || (state_.brightness != new_dim_level);
+    state_.brightness = new_dim_level;
+    gatt_client_.cached_commands[kBrightness].data[3] = state_.brightness;
+    log_d("Brightness: %d %d  ",
+          gatt_client_.cached_commands[kBrightness].is_dirty,
+          state_.brightness);
+    return state_.brightness;
   }
 
   unsigned int switch_kelvin_mired(unsigned int value) {
@@ -115,6 +122,7 @@ public:
   void set_intermmediate_light(uint8_t content_flag, uint16_t duration,
                                uint8_t saturation, uint16_t hue,
                                uint16_t kelvin, uint8_t brightness) {
+
     BleGattClient::BleCommand cmd;
     cmd.data[0] = 0xA0;
     cmd.data[1] = 0x01;
@@ -122,37 +130,40 @@ public:
     cmd.data[3] = content_flag;
     cmd.data[4] = duration >> 8;
     cmd.data[5] = duration & 0xFF;
-    brightness = uint(brightness * 2.55);
-    // hue or warmwhite mode ?
     uint8_t brightness_pos = 8;
     if (content_flag & 2) {
       cmd.data[6] = kelvin >> 8;
       cmd.data[7] = kelvin & 0xFF;
       brightness_pos = 8;
-      this->brightness = brightness;
-      this->colortemperature = switch_kelvin_mired(kelvin);
-      cmd.on_send = [&](int) {
-        mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
-                   true);
-      };
+      if (duration == 0) { // permanent ?
+        state_.brightness = brightness / 2.56;
+        state_.kelvin = kelvin;
+        state_.mired = switch_kelvin_mired(kelvin);
+        cmd.on_send = [&](int) {
+          mqtt.queue("stat/" HOSTNAME "/RESULT2", this->create_state_message(),
+                     true);
+        };
+      }
     } else {
       cmd.data[6] = saturation;
       cmd.data[7] = hue >> 8;
       cmd.data[8] = hue & 0xFF;
       brightness_pos = 9;
-      cmd.on_send = [&, saturation, hue, brightness](int newval) {
-        char json[32];
-        snprintf(json, sizeof(json), "%d", saturation);
-        mqtt.queue("stat/" HOSTNAME "/SATURATION", json);
-        snprintf(json, sizeof(json), "%d", hue);
-        mqtt.queue("stat/" HOSTNAME "/HUE", json);
-        snprintf(json, sizeof(json), "%d", brightness);
-        mqtt.queue("stat/" HOSTNAME "/BRIGHTNESS_UP", json);
-      };
+      if (duration == 0) { // permanent ?
+        cmd.on_send = [&, saturation, hue, brightness](int newval) {
+          char json[32];
+          snprintf(json, sizeof(json), "%d", saturation);
+          mqtt.queue("stat/" HOSTNAME "/SATURATION", json);
+          snprintf(json, sizeof(json), "%d", hue);
+          mqtt.queue("stat/" HOSTNAME "/HUE", json);
+          snprintf(json, sizeof(json), "%d", brightness);
+          mqtt.queue("stat/" HOSTNAME "/BRIGHTNESS_UP", json);
+        };
+      }
     }
     cmd.data[brightness_pos] = brightness;
     cmd.is_dirty = true;
-    cmd.size = brightness_pos;
+    cmd.size = brightness_pos + 1;
     gatt_client_.queue_cmd(cmd);
   }
 
@@ -166,22 +177,26 @@ public:
     set_intermmediate_light(2, duration, 0, 0, kelvin, brightness);
   }
 
-  void set_colortemperature_mired(unsigned new_colortemperature) {
+  uint16_t set_colortemperature_mired(unsigned new_colortemperature,
+                                      bool force_dirty = false) {
     if (new_colortemperature < 250)
       new_colortemperature = 250;
-    if (new_colortemperature > 416)
-      new_colortemperature = 416;
+    if (new_colortemperature > 370)
+      new_colortemperature = 370;
     auto kelvin = switch_kelvin_mired(new_colortemperature);
     gatt_client_.cached_commands[kColortemp].data[3] = kelvin >> 8;
     gatt_client_.cached_commands[kColortemp].data[4] = kelvin & 0xFF;
-    gatt_client_.cached_commands[kColortemp].is_dirty =
-        colortemperature != new_colortemperature;
+    gatt_client_.cached_commands[kColortemp].is_dirty |=
+        force_dirty || (state_.mired != new_colortemperature);
     log_i("Color temperature to %d from %d (%d)", new_colortemperature,
-          colortemperature, kelvin);
-    colortemperature = new_colortemperature;
+          state_.mired, kelvin);
+    state_.mired = new_colortemperature;
+    state_.kelvin = switch_kelvin_mired(new_colortemperature);
+    return new_colortemperature;
   }
 
-  void set_colortemperature_kelvin(unsigned new_colortemperature) {
+  uint16_t set_colortemperature_kelvin(unsigned new_colortemperature,
+                                       bool force_dirty) {
     if (new_colortemperature > 4000)
       new_colortemperature = 4000;
     if (new_colortemperature < 2700)
@@ -190,33 +205,40 @@ public:
         new_colortemperature >> 8;
     gatt_client_.cached_commands[kColortemp].data[4] =
         new_colortemperature & 0xFF;
-    gatt_client_.cached_commands[kColortemp].is_dirty =
-        colortemperature != new_colortemperature;
-    colortemperature = new_colortemperature;
+    gatt_client_.cached_commands[kColortemp].is_dirty |=
+        force_dirty || (state_.kelvin != new_colortemperature);
+    state_.kelvin = new_colortemperature;
+    state_.mired = switch_kelvin_mired(new_colortemperature);
+    return new_colortemperature;
   }
 
-  void set_scene(unsigned int new_scene) {
+  uint8_t set_scene(unsigned int new_scene, bool force_dirty = false) {
     new_scene &= 0xFF;
     gatt_client_.cached_commands[kScene].data[3] = new_scene;
-    gatt_client_.cached_commands[kScene].is_dirty =
-        current_scene == 0 || current_scene != new_scene;
-    current_scene = new_scene;
-
-    brightness = SceneBrightnessMapper::map(current_scene);
-    gatt_client_.cached_commands[kBrightness].on_send(brightness);
+    gatt_client_.cached_commands[kScene].is_dirty |=
+        force_dirty || (state_.scene == 0 || state_.scene != new_scene);
+    state_.scene = new_scene;
+    if (state_.brightness == 0) {
+      state_.brightness = SceneBrightnessMapper::map(state_.scene);
+    }
+    gatt_client_.cached_commands[kBrightness].on_send(state_.brightness);
+    return state_.scene;
   }
 
-  bool set_powerstate(bool new_power_state) {
-    gatt_client_.cached_commands[kScene].is_dirty =
-        new_power_state != power_state;
-    power_state = new_power_state;
+  bool set_powerstate(bool new_power_state, bool force_dirty = false) {
+    gatt_client_.cached_commands[kScene].is_dirty |=
+        force_dirty || (new_power_state != state_.power);
+    state_.power = new_power_state;
     gatt_client_.cached_commands[kScene].data[3] =
-        (new_power_state ? current_scene : 0);
-    return power_state;
+        (new_power_state ? state_.scene : 0);
+    if (state_.power && gatt_client_.cached_commands[kScene].is_dirty) {
+      set_dimmer(state_.brightness, true);
+      //      set_colortemperature_mired(state_.mired,true);
+    }
+    return state_.power;
   }
 
   void send_custom(const uint8_t *data, size_t length) {
-    return;
     BleGattClient::BleCommand custom;
     custom.is_dirty = true;
     custom.size = length;
@@ -227,7 +249,7 @@ public:
   }
 
   const char *create_state_message() {
-    static char statemsg[128];
+    static char statemsg[512];
     time_t now = time(0);
 
     // Convert now to tm struct for local timezone
@@ -237,11 +259,11 @@ public:
              "{\"Time\":"
              "\"%04d-%02d-%02dT%02d:%02d:%02d\","
              "\"Heap\":%u,\"IPAddress\":\"%s\",\"POWER\":\"%s\",\"CT\":"
-             "%d,\"DIMMER\":%d,\"SCENE\":%d}",
+             "%d,\"KELVIN\":%d,\"DIMMER\":%d,\"SCENE\":%d}",
              t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
              t->tm_min, t->tm_sec, ESP.getFreeHeap() / 1024,
-             WiFi.localIP().toString().c_str(), power_state ? "ON" : "OFF",
-             colortemperature, brightness, current_scene);
+             WiFi.localIP().toString().c_str(), state_.power ? "ON" : "OFF",
+             state_.mired, state_.kelvin, state_.brightness, state_.scene);
     return statemsg;
   }
 
@@ -252,35 +274,41 @@ public:
     });
   }
 
-  unsigned int colortemperature;
-  unsigned int brightness;
-  unsigned int current_scene;
-  bool power_state;
-
 private:
   volatile bool sending = false;
+  BleGattClient gatt_client_;
+  State state_;
 };
 
-LR_Ble_Device lr(ble_client);
-
+RTC_DATA_ATTR LR_Ble_Device lr;
 AsyncWebServer server(80);
 
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
 
-int get_power_state() { return lr.power_state ? 1 : 0; }
+RTC_DATA_ATTR bool powerstate_ = false;
+///// Command parsing //////////////
+bool get_powerstate() { return powerstate_; }
 
 bool set_powerstate(bool value) {
 
   if (mqtt.connected()) {
     char json[32];
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message());
-    snprintf(json, sizeof(json), "%d", dimlevel);
+    snprintf(json, sizeof(json), "%d", lr.state().brightness);
     mqtt.queue("stat/" HOSTNAME "/POWER", value ? "ON" : "OFF");
   }
 
-  return lr.set_powerstate(value);
+  powerstate_ = value;
+#if (RELAY_PIN == 0)
+  powerstate_ = lr.set_powerstate(value, true);
+
+#else
+  digitalWrite(RELAY_PIN, value ? HIGH : LOW);
+
+#endif
+  return powerstate_;
 }
 bool set_powerstate(const String &value) {
   if (value.equals("0") || value.equals("off") || value.equals("false") ||
@@ -290,15 +318,14 @@ bool set_powerstate(const String &value) {
              value.equals("1")) {
     set_powerstate(true);
   } else if (value.equals("toggle")) {
-    set_powerstate(!lr.power_state);
+    set_powerstate(!get_powerstate());
   }
-  return lr.power_state;
+  return get_powerstate();
 }
 
-int get_dimmer_value() { return lr.brightness; }
+int get_dimmer_value() { return lr.state().brightness; }
 
 int set_dimmer_value(int new_level) {
-  dimlevel = new_level;
   if (new_level > 100) {
     new_level = 100;
   }
@@ -306,8 +333,8 @@ int set_dimmer_value(int new_level) {
     new_level = 0;
   }
   log_i("Set Dimmer Level to %d", new_level);
-  lr.set_dimmer(new_level);
-  dimlevel = new_level;
+
+  lr.set_dimmer(new_level, true);
   return new_level;
 }
 
@@ -315,8 +342,8 @@ int set_dimmer_value(const String &value) {
   bool parsing_success = false;
   char *p;
   long numvalue = strtol(value.c_str(), &p, 10);
+  auto brightness = lr.state().brightness;
   if (*p) {
-    log_i("Text Dimmer Level %s", value.c_str());
     // p points to the char after the last digit. so if value is a number it
     // points to the terminating \0
 
@@ -334,33 +361,35 @@ int set_dimmer_value(const String &value) {
     }
     if (cmd.equals("+") || cmd.equals("up")) {
       parsing_success = true;
-      dimlevel += step_value;
-      log_i("Increase Dimmer Level to %d", dimlevel);
+      brightness += step_value;
+      log_d("Increase Dimmer Level to %d", brightness);
     } else {
       if (cmd.equals("-") || cmd.equals("down")) {
         parsing_success = true;
-        dimlevel -= step_value;
+        brightness -= step_value;
       }
     }
   } else {
     parsing_success = true;
-    dimlevel = (int)numvalue;
+    brightness = (int)numvalue;
   }
   if (parsing_success) {
-    set_dimmer_value(dimlevel);
+    set_dimmer_value(brightness);
   }
-  return dimlevel;
+  return brightness;
 }
 
+int get_scene() { return lr.state().scene; }
+
 int set_scene(int numvalue) {
-  scene = numvalue & 0xFF;
+  auto scene = numvalue & 0xFF;
   if (scene > scenes.size() && scene != 0xFF)
     scene = 1;
   if (scene < 1 && scene != 0xFF)
     scene = scenes.size();
 
   log_i("Set Scene Level to %d", scene);
-  lr.set_scene(scene);
+  lr.set_scene(scene, true);
   return scene;
 }
 
@@ -368,8 +397,9 @@ int set_scene(const String &value) {
   bool parsing_success = false;
   char *p;
   long numvalue = strtol(value.c_str(), &p, 10);
+  auto scene = lr.state().scene;
   if (*p) {
-    log_i("Scene %s", value.c_str());
+    log_d("Scene %s", value.c_str());
     // p points to the char after the last digit. so if value is a number it
     // points to the terminating \0
 
@@ -397,7 +427,7 @@ int set_scene(const String &value) {
     }
   } else {
     parsing_success = true;
-    scene = (int)numvalue;
+    scene = (uint8_t)numvalue;
   }
   if (parsing_success) {
     set_scene(scene);
@@ -405,51 +435,37 @@ int set_scene(const String &value) {
   return scene;
 }
 
-int set_scene_brightness(const String &value) {
-  char *p;
-  strtol(value.c_str(), &p, 10);
-  if (*p && *p != '.') {
-    log_i("Map Scene %s", value.c_str());
-    // p points to the char after the last digit. so if value is a number it
-    // points to the terminating \0
-
-    // is there another param e.g. "scene up 2"
-    auto param = value.indexOf(' ');
-    String param_value;
-    String cmd;
-    if (param > 0) {
-      uint8_t scene;
-      int dim_level = 50;
-      param_value = value.substring(param + 1);
-      cmd = value.substring(0, param);
-      scene = atol(cmd.c_str());
-      dimlevel = atol(param_value.c_str());
-      SceneBrightnessMapper::set(scene, dim_level);
-    }
+int set_colortemperature_mired(int numvalue) {
+  if (numvalue > 370) {
+    numvalue = 370;
   }
-  return SceneBrightnessMapper::size();
+  if (numvalue < 250) {
+    numvalue = 250;
+  }
+  log_i("Set Color temperature to %d mired", numvalue);
+
+  lr.set_colortemperature_mired(numvalue, true);
+  return lr.state().mired;
 }
 
-int set_colortemperature(int numvalue) {
-  colortemperature = numvalue;
-  if (colortemperature > 416) {
-    colortemperature = 416;
+int set_colortemperature_kelvin(int numvalue) {
+  if (numvalue > 4000) {
+    numvalue = 4000;
   }
-  if (colortemperature < 250) {
-    colortemperature = 250;
+  if (numvalue < 2700) {
+    numvalue = 2700;
   }
-  log_i("Set Color temperature to %d", colortemperature);
+  log_i("Set Color temperature to %d kelvin", numvalue);
 
-  lr.set_colortemperature_mired(colortemperature);
-  return colortemperature;
+  lr.set_colortemperature_kelvin(numvalue, true);
+  return lr.state().kelvin;
 }
-
-int set_colortemperature(const String &value) {
+int set_colortemperature(const String &value, bool use_kelvin = false) {
   bool parsing_success = false;
   char *p;
   long numvalue = strtol(value.c_str(), &p, 10);
+  auto current_value = use_kelvin ? lr.state().kelvin : lr.state().mired;
   if (*p && *p != '.') {
-    log_i("Text Color Temperature <%s>", value.c_str());
     // p points to the char after the last digit. so if value is a number it
     // points to the terminating \0
 
@@ -457,7 +473,7 @@ int set_colortemperature(const String &value) {
     auto param = value.indexOf(' ');
     String param_value;
     String cmd;
-    int step_value = 10;
+    int step_value = use_kelvin ? 10 : 1;
     if (param > 0) {
       param_value = value.substring(param + 1);
       cmd = value.substring(0, param);
@@ -467,48 +483,141 @@ int set_colortemperature(const String &value) {
     }
     if (cmd.equals("+") || cmd.equals("up")) {
       parsing_success = true;
-      colortemperature += step_value;
-      log_i("Increase Color Temperature to %d", colortemperature);
+      current_value += step_value;
+      log_i("Increase Color Temperature to %d", current_value);
     } else {
       if (cmd.equals("-") || cmd.equals("down")) {
         parsing_success = true;
-        colortemperature -= step_value;
+        current_value -= step_value;
       }
     }
   } else {
     parsing_success = true;
-    colortemperature = (int)numvalue;
+    current_value = (int)numvalue;
   }
   if (parsing_success) {
-    set_colortemperature(colortemperature);
+    if (use_kelvin) {
+      set_colortemperature_kelvin(current_value);
+    } else {
+      set_colortemperature_mired(current_value);
+    }
   }
-  return colortemperature;
+  return current_value;
+}
+
+int set_scene_brightness(const String &value) {
+  char *p;
+  strtol(value.c_str(), &p, 10);
+  if (*p && *p != '.') {
+    log_d("Map Scene %s", value.c_str());
+    // p points to the char after the last digit. so if value is a number it
+    // points to the terminating \0
+
+    // is there another param e.g. "scene up 2"
+    auto param = value.indexOf(' ');
+
+    String param_value;
+    String cmd;
+    if (param > 0) {
+      uint8_t scene;
+      int dim_level = 50;
+      param_value = value.substring(param + 1);
+      cmd = value.substring(0, param);
+      scene = atol(cmd.c_str());
+      dim_level = atol(param_value.c_str());
+      SceneBrightnessMapper::set(scene, dim_level);
+    }
+  }
+  return SceneBrightnessMapper::size();
 }
 
 void queue_ble_command(const String &value) {
   int len = value.length() / 2;
   char *p;
-  union {
-    unsigned long long numvalue;
-    uint8_t data[8];
-  } buff;
+  unsigned long byte;
+  uint8_t ble_data[16];
+  char two_chars[3];
+  const char *numptr = value.c_str();
+  for (int i = 0; i < len && i < sizeof(ble_data); i++) {
+    two_chars[0] = *numptr++;
+    two_chars[1] = *numptr++;
+    two_chars[2] = '\0';
+    byte = strtoul(two_chars, &p, 16);
+    ble_data[i] = byte & 0xFF;
+    log_v(" BLE custom %d : %d", i, ble_data[i]);
+  }
 
-  buff.numvalue = strtoull(value.c_str(), &p, 16);
-  uint8_t ble_data[8];
-  if (buff.numvalue != 0) {
+  lr.send_custom(ble_data, len);
+}
 
-    for (int i = 0; i < len; i++) {
-      ble_data[i] = buff.data[len - i - 1];
-      //   log_i(" BLE custom %d : %d",i,ble_data[i]);
+bool set_uplight(const char *json) {
+  long duration = 0;
+  long saturation = 0;
+  long hue = 0;
+  long brightness = 0;
+
+  bool success = false;
+  if (!get_jsonvalue(json, "duration", duration)) {
+    success = get_jsonvalue(json, "d", duration);
+  }
+
+  success = get_jsonvalue(json, "saturation", saturation);
+
+  if (!success) {
+    success = get_jsonvalue(json, "s", saturation);
+  }
+  if (success) {
+    success = get_jsonvalue(json, "hue", hue);
+    if (!success) {
+      success = get_jsonvalue(json, "h", hue);
     }
   }
-  lr.send_custom(ble_data, len);
+  if (success) {
+    success = get_jsonvalue(json, "brightness", brightness);
+    if (!success) {
+      success = get_jsonvalue(json, "b", brightness);
+    }
+  }
+  if (success) {
+    lr.set_intermmediate_uplight(duration, saturation, hue, brightness);
+  }
+  return success;
+}
+
+bool set_downlight(const char *json) {
+  long duration = 0;
+  long kelvin = 0;
+  long brightness = 0;
+
+  bool success = false;
+  if (!get_jsonvalue(json, "duration", duration)) {
+    success = get_jsonvalue(json, "d", duration);
+  }
+
+  success = get_jsonvalue(json, "kelvin", kelvin);
+  if (!success) {
+    success = get_jsonvalue(json, "k", kelvin);
+  }
+  if (success) {
+    success = get_jsonvalue(json, "brightness", brightness);
+    if (!success) {
+      success = get_jsonvalue(json, "b", brightness);
+      if (!success) {
+              success = get_jsonvalue(json, "dimmer", brightness);
+              brightness = brightness*255 / 100 ;
+      }
+    }
+  }
+  if (success) {
+    lr.set_intermmediate_downlight(duration, kelvin, brightness);
+  }
+  return success;
 }
 
 unsigned long last_mqttping = millis();
 
 bool parse_command(const char *command) {
-  log_i("%ld Start Parsing %s", millis(), command);
+  log_d("%ld Start Parsing %s", millis(), command);
   auto position_space = strchr(command, ' ');
   String value;
   String cmd;
@@ -533,7 +642,20 @@ bool parse_command(const char *command) {
   }
   cmd.trim();
   cmd.toLowerCase();
-  if (cmd.equals("power")) {
+  log_d("CMD = <%s> value = <%s> P=%d", cmd.c_str(), value.c_str(),
+        command - position_space);
+
+  // is this a json command
+  if (cmd.equals("uplight")) {
+    if (position_space != nullptr) {
+      set_uplight(value.c_str());
+    }
+  } else if (cmd.equals("downlight")) {
+    if (position_space != nullptr) {
+      set_downlight(value.c_str());
+    }
+    return true;
+  } else if (cmd.equals("power")) {
     if (position_space != nullptr) {
       set_powerstate(value);
     }
@@ -552,7 +674,13 @@ bool parse_command(const char *command) {
     return true;
   } else if (cmd.equals("ct")) {
     if (position_space != nullptr) {
-      set_colortemperature(value);
+      set_colortemperature(value, false);
+    } else { /* return state */
+    }
+    return true;
+  } else if (cmd.equals("kelvin")) {
+    if (position_space != nullptr) {
+      set_colortemperature(value, true);
     } else { /* return state */
     }
     return true;
@@ -564,37 +692,39 @@ bool parse_command(const char *command) {
     return true;
   } else if (cmd.equals("ota")) {
     AppUtils::setupOta();
+    mqtt.queue("tele/" HOSTNAME "/ota", "waiting for ota start on port 3232");
     return true;
   } else if (cmd.equals("RESULT")) {
     last_mqttping = millis();
-    log_i("got mqtt ping");
+    log_d("got mqtt ping");
     return true;
   } else if (cmd.equals("reboot") || cmd.equals("restart")) {
     log_i("------- REBOOT -------");
     yield();
     delay(500);
     ESP.restart();
-  } else if (cmd.equals("blecustom") && position_space > 0) {
+  } else if (cmd.equals("blecustom") && position_space != nullptr) {
     queue_ble_command(value);
   }
   return false;
 }
+////// PARSING End ///////////
 
 // Replaces placeholder with button section in your web page
 String processor(const String &var) {
   // Serial.println(var);
   if (var == "DIMVALUE") {
-    return String(lr.brightness);
+    return String(lr.state().brightness);
   }
   if (var == "CTVALUE") {
-    return String(lr.colortemperature);
+    return String(lr.state().mired);
   }
 
   if (var == "CHECKED") {
-    return lr.power_state ? "checked" : "";
+    return lr.state().power ? "checked" : "";
   }
   if (var == "ANAUS") {
-    return lr.power_state ? "An" : "Aus";
+    return lr.state().power ? "An" : "Aus";
   }
 
   if (var == "SCENES") {
@@ -605,13 +735,13 @@ String processor(const String &var) {
     for (const auto &s : scenes) {
       if (s.first != 0) {
         scene_html += "<option" +
-                      String(lr.current_scene == s.first ? " selected" : "") +
+                      String(lr.state().scene == s.first ? " selected" : "") +
                       " value=\"" + String(s.first) + "\">" + s.second.c_str() +
                       "</option>";
       }
     }
     scene_html += "</select>";
-    log_i("HTML: %s", scene_html.c_str());
+    log_v("HTML: %s", scene_html.c_str());
     return scene_html;
   }
 
@@ -619,6 +749,10 @@ String processor(const String &var) {
 }
 
 static const char *PARAM_CMD = "cmnd";
+#ifdef ROTARY
+RotaryEncoderButton rotary;
+#endif
+
 void setup() {
 
   app.on_network_connect = mqtt.mqtt_reconnect;
@@ -670,8 +804,8 @@ void setup() {
   mqtt.start();
   bool result;
   int attempts = 0;
-  while (!(result = ble_client.connect_to_server(
-               []() { get_all_scenes(ble_client); }))) {
+  while (!(result = lr.client().connect_to_server(
+               []() { get_all_scenes(lr.client()); }))) {
     delay(1000);
     if (attempts++ == 10) {
       log_e("unable to connect to BLE Device - restarting");
@@ -680,32 +814,85 @@ void setup() {
   }
 
   if (result) {
-    auto initalscene = get_current_scene(ble_client);
-
+    auto initalscene = get_current_scene(lr.client());
     if (initalscene == 0) {
-      lr.power_state = false;
-      if (lr.current_scene == 0)
-        lr.current_scene = 0xFF;
+      powerstate_ = false;
+      if (lr.state().scene == 0)
+        lr.set_scene(0xFF);
     } else {
-      lr.power_state = true;
-      lr.current_scene = initalscene;
+      powerstate_ = true;
+      lr.set_scene(initalscene);
     }
-    lr.brightness = SceneBrightnessMapper::map(lr.current_scene);
   }
+
+#ifdef ROTARY
+  ESP_ERROR_CHECK(
+      rotary.init(ROTARY_PIN_A, ROTARY_PIN_B, ROTARY_PIN_BUTTON, false));
+  auto buttonConfig = rotary.getButtonConfig();
+
+  rotary.set_speedup_times(50, 25);
+  rotary.on_rotary_event = [&](rotary_encoder_event_t event) {
+    log_v("Rotary event %d  %d (%d) %ld ", event.state.direction,
+          event.state.position, event.state.speed);
+    int dimmerlevel = get_dimmer_value();
+    int step = 5;
+    if (event.state.direction == ROTARY_ENCODER_DIRECTION_CLOCKWISE) {
+      step *= event.state.speed;
+    } else if (event.state.direction ==
+               ROTARY_ENCODER_DIRECTION_COUNTER_CLOCKWISE) {
+      step *= -1 * event.state.speed;
+    }
+    set_dimmer_value(dimmerlevel + step);
+
+  };
+  rotary.on_button_event = [&](uint8_t eventType, uint8_t buttonState) {
+    if (eventType == AceButton::kEventReleased) {
+      set_powerstate(!get_powerstate());
+    }
+    if (eventType == AceButton::kEventRepeatPressed) {
+      set_scene(get_scene() + 1);
+    }
+  };
+
+  buttonConfig->setFeature(ButtonConfig::kFeatureRepeatPress);
+  //  buttonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
+  buttonConfig->setRepeatPressDelay(1500);
+  buttonConfig->setRepeatPressInterval(1500);
+#endif
+
+#if RELAY_PIN != 0
+  pinMode(RELAY_PIN, OUTPUT);
+#endif
+  log_d("Inital State: Power = %d scene %d", get_powerstate(), get_scene());
 }
+
+#define TAG "app"
 
 void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();
   mqtt.loop();
-  ble_client.loop([&]() {
+  lr.client().loop([&]() {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
   });
 
   if (millis() - last_statemsg > 60000 * 5) {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
-    mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
+    // no need for an extra message - we are subscribing to the stat message
+    // instead
+    //  mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
     last_statemsg = millis();
+
+    // usually the free heap is around 100k . If it is below 50k I must have a
+    // memory leak somewhere. Reboot as a workaround
+    if (ESP.getFreeHeap() < 50000) {
+      log_e("POSSIBLE MEMORY LEAK detected. Free heap is %d k.  Rebooting",
+            ESP.getFreeHeap() / 1024);
+      // use deepsleep instead of a regular reboot
+      esp_sleep_enable_timer_wakeup(10);
+      delay(100);
+      esp_deep_sleep_start();
+    }
   }
   // restablish mqtt after 10 mins without an incoming ping
   if (millis() - last_mqttping > 60000 * 10) {

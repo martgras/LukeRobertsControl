@@ -19,7 +19,6 @@ static BLEAddress deviceaddr = BLEAddress(LR_BLEADDRESS, 1);
 class BleGattClient {
 
 public:
-
   friend uint8_t get_current_scene(BleGattClient &client);
 
   using on_complete_callback = std::function<void()>;
@@ -66,7 +65,7 @@ public:
     std::function<void(int)> on_send;
   };
 
-  static const int CACHE_SIZE_ = 3;
+  static const int CACHE_SIZE_ = 5;
   // std::vector<BleData> cached_commands;
   std::array<BleCommand, CACHE_SIZE_> cached_commands;
   std::queue<BleCommand> pending_commands;
@@ -221,40 +220,93 @@ private:
   ClientCallbacks client_cb_;
 };
 
-
 // Helper call. Reads/Writes  bightnesses for scenes from SPIFFS storage
+
+template <typename T> class SPIFFSHelper {
+public:
+  File file_;
+  File open(const char *filename, const char *mode) {
+    if (!SPIFFS.begin(true)) {
+      log_e("An Error has occurred while mounting SPIFFS");
+      return File();
+    }
+    file_ = SPIFFS.open(filename, mode);
+    return file_;
+  }
+
+  void close() {
+    file_.close();
+    SPIFFS.end();
+  }
+  SPIFFSHelper() {}
+
+  ~SPIFFSHelper() { close(); }
+  size_t read(File &file, T &element) {
+    return file.read((uint8_t *)&element, sizeof(T));
+  }
+  size_t read(T &element) { return read(file_,element); }
+
+  size_t write(File &file, const T &element) {
+    return file.write((const uint8_t *)&element, sizeof(T));
+  }
+  size_t write(const T &element) {
+    return write(file_,element);
+  }
+
+  bool write(const char *filename, T &element) {
+    if (!SPIFFS.begin(true)) {
+      log_e("An Error has occurred while mounting SPIFFS");
+      return false;
+    }
+    File mapfile = SPIFFS.open(filename, "w+");
+    if (mapfile) {
+      write(mapfile, &element);
+      mapfile.close();
+      SPIFFS.end();
+      return true;
+    }
+    return false;
+  }
+
+  bool read(const char *filename, T &element) {
+    if (!SPIFFS.begin(true)) {
+      log_e("An Error has occurred while mounting SPIFFS");
+      return false;
+    }
+    File mapfile = SPIFFS.open(filename, "r");
+    if (mapfile) {
+      read(mapfile, &element);
+      mapfile.close();
+      SPIFFS.end();
+      return true;
+    }
+    return false;
+  }
+};
 
 class SceneBrightnessMapper {
 public:
   SceneBrightnessMapper() {}
   static int save() {
-    if (!SPIFFS.begin(true)) {
-      log_e("An Error has occurred while mounting SPIFFS");
-      return 0;
-    }
-    File mapfile = SPIFFS.open("/bmap.bin", "w+");
-    if (mapfile) {
+
+    SPIFFSHelper<uint16_t> spiff;
+    if (spiff.open("/bmap.bin", "w+")) {
       uint16_t number_of_elements = brightness_map_.size();
-      mapfile.write((uint8_t *)&number_of_elements, sizeof(number_of_elements));
+      spiff.write(number_of_elements);
       for (auto i : brightness_map_) {
-        mapfile.write((uint8_t *)&i, sizeof(i));
+        spiff.write(i);
       }
-      mapfile.close();
-      SPIFFS.end();
+      spiff.close();
       return number_of_elements;
     } else {
-      SPIFFS.end();
       log_e("Can't create brightness mapfile");
     }
     return 0;
   }
   static int load() {
 
-    if (!SPIFFS.begin(true)) {
-      log_e("An Error has occurred while mounting SPIFFS");
-      return 0;
-    }
-    File mapfile = SPIFFS.open("/bmap.bin", "r");
+    SPIFFSHelper<uint16_t> spiff;
+    File mapfile = spiff.open("/bmap.bin", "r");
     if (!mapfile) {
       log_w("Failed to open file for reading");
       return save();
@@ -263,16 +315,14 @@ public:
     uint16_t number_of_elements = 0;
     if (mapfile) {
       brightness_map_.clear();
-
-      mapfile.read((uint8_t *)&number_of_elements, sizeof(number_of_elements));
-      int item = 0;
+      spiff.read(number_of_elements);
+      uint16_t  item = 0;
       for (int i = 0; i < number_of_elements; i++) {
-        mapfile.read((uint8_t *)&item, sizeof(item));
+        spiff.read(item);
         brightness_map_.push_back(item);
       }
-      mapfile.close();
+      spiff.close();
     }
-    SPIFFS.end();
     return number_of_elements;
   }
 

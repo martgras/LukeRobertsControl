@@ -45,7 +45,9 @@ public:
   static void begin_sleep();
   static void setup_time();
   static void loop();
-  static void setupOta();
+  static void setupOta( std::function<void (unsigned int,unsigned int)> on_progress  = [](unsigned int progress, unsigned int total) {
+        log_i("Progress: %u%%\r", (progress / (total / 100)));
+      } );
   static bool eth_connected() 
   {
     return eth_connected_ ; 
@@ -84,6 +86,7 @@ private:
   static void eth_event(WiFiEvent_t event);
 };
 
-
-
+long get_jsonvalue(const char* json, const char* name);
+bool get_jsonvalue(const char* json, const char* name, long& result);
+bool get_jsonvalue(const char* json, const char* name, char* result, size_t result_max);
 }

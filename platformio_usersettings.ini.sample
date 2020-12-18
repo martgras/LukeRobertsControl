@@ -1,12 +1,21 @@
 [usersettings]
 build_flags = -DWIFISID='"mywifi"'
-              -DWIFIPASSWORD='"mysecret-wifi-pwd"'
-              -DMQTTUSER='nullptr'
-              -DMQTTPASSWORD='nullptr'
-              -DHOSTNAME='"lrcontoller"'
-              -DDOMAINNAME='".local"'
-              -DMQTTHOST='"192.168.1.214"'
-              -DMQTTPORT=1883
-              -DNTP_SERVER='"europe.pool.ntp.org"'
-              -DTIMEZONE='"CET-1CEST,M3.5.0,M10.5.0/3"'
-              -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'
+            -DWIFIPASSWORD='"mysecret-wifi-pwd"'
+            -DMQTTUSER='nullptr'
+            -DMQTTPASSWORD='nullptr'
+            -DHOSTNAME='"lrcontoller"'
+            -DDOMAINNAME='".local"'
+            -DMQTTHOST='"192.168.1.214"'
+            -DMQTTPORT=1883
+            -DNTP_SERVER='"europe.pool.ntp.org"'
+            -DTIMEZONE='"CET-1CEST,M3.5.0,M10.5.0/3"'
+            -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'
+            -DROTARY=1                                  ## use a rotary attached to esp32 
+            -DROTARY_PIN_A=GPIO_NUM_26                   ## pin a (CLK) of the rotary (Fire Beetle D3)
+            -DROTARY_PIN_B=GPIO_NUM_27                   ## pin b (DT) of the rotary (Fire Beetle D4)
+            -DROTARY_PIN_BUTTON=GPIO_NUM_25             ## input pin of the rotary switch (SW) (Fire Beetle D2)
+            -DRELAY_PIN=GPIO_NUM_13                     ## Relay PIN to switch for power on/off. If not defined or as GPIO_NUM_0 scene is set to 0 to turn off the lamp  
+            -DEXTRA_SWITCH=GPIO_NUM_0                   ## not implemented (monitor a second switch for on / off events). Connect to pin and GND 
+            -DEXTRA_SWITCH_MODE=CHANGE                  ## not implemented (which event triggers a powerstate change. 
+                                                        ##     CHANGE: Whenever the switch (Schalter) postion is modified. Can be used with a regular switch   
+                                                        ##     FALLING/RISING:  use with a push button (Taster) 

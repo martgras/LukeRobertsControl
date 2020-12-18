@@ -24,17 +24,17 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
 
     client = NimBLEDevice::createClient(deviceaddr);
 
-    log_i("New BLE client created");
+    log_d("New BLE client created");
 
     client->setClientCallbacks(&client_cb_, false);
 
     client_cb_.set_on_connect(*this, [&]() {
       this->connected_ = true;
-      log_i("BLE Connect ON CONNECT LAMBDA ==========================");
+      log_d("BLE CONNECT");
     });
     client_cb_.set_on_diconnect(*this, [&]() {
       this->connected_ = false;
-      log_i("BLE Connect ON DISCONNECT LAMBDA ==========================");
+      log_d("BLE DISCONNECT ");
     });
     /** Set initial connection parameters: These settings are 15ms interval, 0
      * latency, 120ms timout.
@@ -84,7 +84,7 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
 
   if (characteristic) { /** make sure it's not null */
     if (characteristic->canRead()) {
-      log_i("%s Value %s ", characteristic->getUUID().toString().c_str(),
+      log_d("%s Value %s ", characteristic->getUUID().toString().c_str(),
             characteristic->readValue().c_str());
     }
 
@@ -179,12 +179,12 @@ void BleGattClient::loop(on_complete_callback on_send) {
     static bool connecting = false;
     if (!connecting) {
       connecting = true;
-      log_i("trying to connect");
+      log_d("trying to connect");
       if (connected() || connect_to_server()) {
         log_i("Connected to the BLE Server.");
       } else {
         failed_connects++;
-        log_i("Failed to connect to the BLE server (%d)", failed_connects);
+        log_w("Failed to connect to the BLE server (%d)", failed_connects);
         if (failed_connects > 20) {
           log_e("Failed to connect to the BLE server more than %d times. "
                 "Reboooting..",
@@ -205,7 +205,7 @@ void BleGattClient::loop(on_complete_callback on_send) {
           }
         }
         last_sent = millis();
-        log_i("%ld Command sent", last_sent);
+        log_d("%ld Command sent", last_sent);
       }
     }
   }
@@ -259,7 +259,7 @@ int request_all_scenes(BleGattClient &client) {
       size_t length, bool isNotify) {
 
     for (auto i = 0; i < length; i++) {
-      log_i("Response byte: %d (0x%X)", pData[i], pData[i]);
+      log_d("Response byte: %d (0x%X)", pData[i], pData[i]);
     }
 
     // There is nothing in the response to identify if the response is from the
@@ -295,7 +295,7 @@ int request_all_scenes(BleGattClient &client) {
     }
     */
   }
-  log_i("Got %d scenes", scenes.size());
+  log_d("Got %d scenes", scenes.size());
 
   vSemaphoreDelete(new_scene_received);
   new_scene_received = nullptr;
@@ -307,7 +307,7 @@ void get_all_scenes(BleGattClient &client) {
   if (scenes.size() < 2) {
     request_all_scenes(client);
     for (const auto &s : scenes) {
-      log_i("Scene %d name=%s", s.first, s.second.c_str());
+      log_d("Scene %d name=%s", s.first, s.second.c_str());
     }
   }
 }
@@ -317,7 +317,7 @@ uint8_t get_current_scene(BleGattClient &client) {
       client.service->getCharacteristic(charUUID_Scene);
   if (pRemoteCharacteristic2->canRead()) {
     int v = pRemoteCharacteristic2->readValue<uint8_t>();
-    log_i("Scene: %d\r\n ", v);
+    log_i("Current Scene: %d\r\n ", v);
     return v;
   }
   return 0xFF;

@@ -16,8 +16,6 @@ String AppUtils::ssid_;
 String AppUtils::password_;
 AppUtils::NetworkMode AppUtils::network_mode_;
 
-
-
 uint32_t AppUtils::last_sleep_time = 0;
 
 void AppUtils::begin(bool init_wifi = true) {
@@ -38,16 +36,17 @@ void AppUtils::begin(bool init_wifi = true) {
 */
 
 void AppUtils::setup_time() {
-  configTzTime(TIMEZONE, NTP_SERVER,"pool.ntp.org"); 
+  configTzTime(TIMEZONE, NTP_SERVER, "pool.ntp.org");
 }
 
 RTC_DATA_ATTR uint16_t AppUtils::boot_counter = 0;
 
-std::function<bool(void)> AppUtils::on_network_connect  = []() { return true ;};
+std::function<bool(void)> AppUtils::on_network_connect = []() { return true; };
 
 int AppUtils::wifi_signal_ = 0;
 
-void AppUtils::setupOta() {
+void AppUtils::setupOta(
+    std::function<void(unsigned int, unsigned int)> on_progress) {
 
   ArduinoOTA.onStart([]() {
               inOTA = true;
@@ -67,9 +66,7 @@ void AppUtils::setupOta() {
         delay(2000);
         ESP.restart();
       })
-      .onProgress([](unsigned int progress, unsigned int total) {
-        log_i("Progress: %u%%\r", (progress / (total / 100)));
-      })
+      .onProgress(on_progress)
       .onError([](ota_error_t error) {
         log_e("Error[%u]: ", error);
         if (error == OTA_AUTH_ERROR)
@@ -162,8 +159,7 @@ void AppUtils::keep_wifi_alive(void *) {
 }
 
 void AppUtils::start_network_keepalive() {
-  if ( network_mode_ == NetworkMode::kWifi)
-   {
+  if (network_mode_ == NetworkMode::kWifi) {
     xTaskCreate(keep_wifi_alive,
                 "keepWiFiAlive", // Task name
                 8192,            // Stack size (bytes)
@@ -210,8 +206,8 @@ uint8_t AppUtils::start_wifi() {
       wifi_workaround_count++;
       log_e("Connection failed, REBOOT/SLEEP!");
       esp_sleep_enable_timer_wakeup(10);
-      esp_deep_sleep_start();
       delay(100);
+      esp_deep_sleep_start();
     }
   }, WiFiEvent_t::SYSTEM_EVENT_STA_DISCONNECTED);
 
@@ -372,5 +368,117 @@ void AppUtils::stop_wifi() {
 }
 
 void AppUtils::loop() { ArduinoOTA.handle(); }
+
+// Find a json value
+// This is NOT a complete json parser
+//   the code searches for the name of the value followed by a colon and parses
+//   anything else after the colon as the value
+//   quotes around strings are removed
+//   this won't work for non trival json content where the same name is used
+//   nultiple times
+//   ok:  { "brightness" : 50 , "scene" : "1" }  is ok
+//	 if the same name occcurs more than once the code still returns only the
+//first match
+//   not working:  { "lamps" : [ {"brightness" : 50 , "scene" : "1" } ,
+//   {"brightness" : 22 , "scene" : "1" } ] }"
+//
+bool find_jsonvalue_(const char *json, const char *name, const char **start,
+                     const char **end) {
+  char token[64];
+  token[0] = '\"';
+  strncpy(token + 1, name, sizeof(token) - 2);
+  token[strlen(name) + 1] = '\"';
+  token[strlen(name) + 2] = '\0';
+
+  const char *ptr = strstr(json, token);
+  bool has_quotes = false;
+  bool success = false;
+  if (ptr) {
+    ptr += strlen(token);
+    while (*ptr && *ptr != ':') {
+      ptr++;
+    }
+    // found a colon ?
+    if (*ptr) {
+      ptr++; // skip the colon
+
+      // skip all spaces after colon
+      while (*ptr && isspace(*ptr)) {
+        ptr++;
+      }
+      // We should point to the value if numeric or the opening quote
+      if (*ptr) {
+        if (*ptr == '\'' || *ptr == '\"') {
+          has_quotes = true;
+          ptr++;
+        }
+        if (*ptr) {
+          *start = ptr;
+          *end = ptr;
+          if (has_quotes) {
+            *end = strpbrk(ptr, "\"\'");
+          } else {
+            while (*ptr != '\0' && !isspace(*ptr) && *ptr != ',' &&
+                   *ptr != '}' && *ptr != ']') {
+              ptr++;
+            }
+            *end = ptr;
+          }
+          success = true;
+        }
+      }
+    }
+  }
+  return success;
+}
+
+bool get_jsonvalue(const char *json, const char *name, long &result) {
+
+  const char *start = 0, *end = 0;
+  bool success = false;
+  if (find_jsonvalue_(json, name, &start, &end)) {
+    if (*start) {
+      // skip leasing zero
+      if (*start == '0') {
+        success = true;
+        result = 0;
+        while (*start == '0') {
+          start++;
+        }
+      }
+      if (isdigit(*start)) {
+        success = true;
+        result = strtol(start, nullptr, 10);
+      }
+    }
+  }
+  log_v("JSON VAL %s %ld" ,name, result);
+  return success;
+}
+
+// Get a json value as a number
+long get_jsonvalue(const char *json, const char *name) {
+  long result = 0;
+  if (get_jsonvalue(json, name, result)) {
+    return result;
+  } else {
+    return LONG_MAX;
+  }
+}
+
+//
+// Get a json value a string
+//
+bool get_jsonvalue(const char *json, const char *name, char *result,
+                   size_t result_max) {
+  const char *start = 0, *end = 0;
+
+  auto r = find_jsonvalue_(json, name, &start, &end);
+  if (r) {
+    strncpy(result, start, end - start + 1);
+    result[end - start] = '\0';
+  }
+  return r;
+}
 
 } // namepsace deepsleep_app

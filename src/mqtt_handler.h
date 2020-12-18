@@ -105,6 +105,7 @@ public:
   
   static void init(Client &network_client,  mqtt_command_handler command_handler=nullptr)
   {
+    mqtt_client.setBufferSize(256);
     mqtt_client.setClient(network_client);
     mqtt_client.setServer(MQTTHOST, MQTTPORT);
     if (command_handler) {
@@ -220,7 +221,6 @@ private:
           strcpy(topic, item.topic);
           strcpy(msg, item.message);
           log_v(" Pub: %s,%s %d", item.topic, item.message,item.retained);
-
           client->publish(topic, msg, item.retained);
           client->loop();
           vTaskDelay(1);
