@@ -191,7 +191,7 @@ TODO: Implement a query interface over HTTP
 
 [NimBle ](https://github.com/h2zero/NimBLE-Arduino) for a great BLE library that works together with Wifi 
 
-[esp32-rotary-encoder](https://github.com/DavidAntliff/esp32-rotary-encoder) - this ESP-IDF library works very reliable. Because it is only designed for ESP-IDF I used the code a basis for a C++ class that works with Arduino. I merged in an AceButton into this class since my rotary has a switch as well.  
+[esp32-rotary-encoder](https://github.com/DavidAntliff/esp32-rotary-encoder) - this ESP-IDF library works very reliable. Because it is only designed for ESP-IDF I used the code a basis for a C++ class that works with Arduino. I merged in an AceButton into this class since my rotary has a switch as well.
 
 [AceButton](https://github.com/bxparks/AceButton) handles all the little details like debouncing and providing an event interface
 
