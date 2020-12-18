@@ -42,10 +42,10 @@ The rotary switch is connected to pins 4,5 and 23 on my esp32 device. Everything
 
 Find the device address of you lamp (example "c4:b9:69:fe:14:b6")
 
-1. Modifiy the settings in platformio_usersettings.ini 
-2. Build and upload
+1. Modifiy the settings in platformio_usersettings.ini.sample and save as  platformio_usersettings.ini
+2. Open in PlatformIO 
+4. Build and upload
 3. Updates can be sent using OTA. 
-
 
 
 ## MQTT 
