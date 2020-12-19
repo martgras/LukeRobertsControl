@@ -1,7 +1,8 @@
 # Remote Control for Luke Roberts Model F Lamp
-## A MQTT and HTTP Gateway to control a Luke Roberts Model F Lamp
 
-## Caveat: Work in progress neither the docs nor the code is complete yet
+## A MQTT and HTTP gateway to control a Luke Roberts Model F Lamp
+
+> **⚠ WARNING: Work in progress neither the docs nor the code is complete yet*
 
 
 
