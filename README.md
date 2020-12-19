@@ -4,6 +4,7 @@
 
 > **⚠ WARNING: Work in progress neither the docs nor the code is complete yet*
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
 ## Introduction
