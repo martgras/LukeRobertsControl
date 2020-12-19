@@ -603,8 +603,8 @@ bool set_downlight(const char *json) {
     if (!success) {
       success = get_jsonvalue(json, "b", brightness);
       if (!success) {
-              success = get_jsonvalue(json, "dimmer", brightness);
-              brightness = brightness*255 / 100 ;
+        success = get_jsonvalue(json, "dimmer", brightness);
+        brightness = brightness * 255 / 100;
       }
     }
   }
@@ -756,14 +756,24 @@ RotaryEncoderButton rotary;
 void setup() {
 
   app.on_network_connect = mqtt.mqtt_reconnect;
-  //  esp_wifi_stop();
+//  esp_wifi_stop();
+#ifndef USE_ETHERNET
   app.set_hostname(HOSTNAME).set_ssid(WIFISID).set_password(WIFIPASSWORD);
+#endif
   mqtt.init(network_client, parse_command);
+  app.start_network();
 
-  SceneBrightnessMapper::load();
+#ifdef LR_BLEADDRESS
+  lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1));
+#else
+#pragma message(                                                               \
+    "NO BLE Device Address provided. Scanning for a Luke Roberts Lamp during startup" )
+  auto device_addr = scan_for_device();
+  log_i("DEVICE : %s", device_addr.toString().c_str());
+  lr.client().init(device_addr);
+#endif
 
-  // app.start_eth(true);
-  app.start_wifi();
+  app.start_network();
   app.start_network_keepalive();
 
   while (!app.network_connected()) {
@@ -864,9 +874,13 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
 #endif
   log_d("Inital State: Power = %d scene %d", get_powerstate(), get_scene());
+
+#ifndef LR_BLEADDRESS
+  mqtt.queue("tele/" HOSTNAME "/BLEADDRESS", device_addr.toString().c_str());
+#endif
 }
 
-#define TAG "app"
+#define TAG "LRGateway"
 
 void loop() {
   static unsigned long last_statemsg = 0;

@@ -14,7 +14,8 @@ static BLEUUID serviceUUID("44092840-0567-11E6-B862-0002A5D5C51B");
 static BLEUUID charUUID("44092842-0567-11E6-B862-0002A5D5C51B");
 // static BLEUUID descUUID("00002902-0000-1000-8000-00805f9b34fb");
 static BLEUUID charUUID_Scene("44092844-0567-11E6-B862-0002A5D5C51B");
-static BLEAddress deviceaddr = BLEAddress(LR_BLEADDRESS, 1);
+
+// static BLEAddress device_addr_ = BLEAddress(LR_BLEADDRESS, 1);
 
 class BleGattClient {
 
@@ -23,6 +24,7 @@ public:
 
   using on_complete_callback = std::function<void()>;
 
+  static void init(BLEAddress device_addr);
   bool connect_to_server(on_complete_callback on_complete = nullptr);
 
   static notify_callback &set_on_notify(notify_callback on_notify) {
@@ -95,6 +97,8 @@ public:
 
   bool send_queued();
   void loop(on_complete_callback on_send = nullptr);
+
+  static BLEAddress device_addr_;
 
 private:
   NimBLERemoteService *service;
@@ -244,14 +248,12 @@ public:
   size_t read(File &file, T &element) {
     return file.read((uint8_t *)&element, sizeof(T));
   }
-  size_t read(T &element) { return read(file_,element); }
+  size_t read(T &element) { return read(file_, element); }
 
   size_t write(File &file, const T &element) {
     return file.write((const uint8_t *)&element, sizeof(T));
   }
-  size_t write(const T &element) {
-    return write(file_,element);
-  }
+  size_t write(const T &element) { return write(file_, element); }
 
   bool write(const char *filename, T &element) {
     if (!SPIFFS.begin(true)) {
@@ -316,7 +318,7 @@ public:
     if (mapfile) {
       brightness_map_.clear();
       spiff.read(number_of_elements);
-      uint16_t  item = 0;
+      uint16_t item = 0;
       for (int i = 0; i < number_of_elements; i++) {
         spiff.read(item);
         brightness_map_.push_back(item);
@@ -354,3 +356,4 @@ private:
 
 void get_all_scenes(BleGattClient &client);
 uint8_t get_current_scene(BleGattClient &client);
+NimBLEAddress scan_for_device();

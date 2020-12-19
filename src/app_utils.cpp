@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <wifi.h>
+#ifdef USE_ETHERNET
 #include <ETH.h>
+#endif
 #include <numeric>
 #include <stdlib.h>
 #include "app_utils.h"
@@ -24,7 +26,7 @@ void AppUtils::begin(bool init_wifi = true) {
   inOTA = false;
 
   if (init_wifi) {
-    wifi_connected_ = (start_wifi() == WL_CONNECTED);
+    wifi_connected_ = start_network();
     setupOta();
   }
 }
@@ -86,6 +88,21 @@ void AppUtils::setupOta(
   ArduinoOTA.setHostname(otaname.c_str());
   ArduinoOTA.begin();
 }
+
+void AppUtils::start_network_keepalive() {
+  if (network_mode_ == NetworkMode::kWifi) {
+    xTaskCreate(keep_wifi_alive,
+                "keepWiFiAlive", // Task name
+                8192,            // Stack size (bytes)
+                nullptr,         // Parameter
+                1,               // Task priority
+                nullptr          // Task handle
+                );
+  }
+}
+
+//#########################################################################################
+#ifndef USE_ETHERNET
 
 static RTC_DATA_ATTR struct _wifi_cfgbuf {
   byte mac[6];
@@ -158,20 +175,8 @@ void AppUtils::keep_wifi_alive(void *) {
   }
 }
 
-void AppUtils::start_network_keepalive() {
-  if (network_mode_ == NetworkMode::kWifi) {
-    xTaskCreate(keep_wifi_alive,
-                "keepWiFiAlive", // Task name
-                8192,            // Stack size (bytes)
-                nullptr,         // Parameter
-                1,               // Task priority
-                nullptr          // Task handle
-                );
-  }
-}
+bool AppUtils::start_wifi() {
 
-//#########################################################################################
-uint8_t AppUtils::start_wifi() {
   bool haveConfig = checkCfg();
   network_mode_ = NetworkMode::kWifi;
 
@@ -309,9 +314,14 @@ uint8_t AppUtils::start_wifi() {
     ESP.restart();
   }
   // else Serial.println("WiFi connection *** FAILED ***");
-  return connectionStatus;
+  return connectionStatus == WL_CONNECTED;
 }
-
+void AppUtils::stop_wifi() {
+  log_i("Wifi stopping..");
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+}
+#else
 void AppUtils::eth_event(WiFiEvent_t event) {
   switch (event) {
   case SYSTEM_EVENT_ETH_START:
@@ -347,7 +357,7 @@ void AppUtils::eth_event(WiFiEvent_t event) {
   }
 }
 
-uint8_t AppUtils::start_eth(bool wait_for_connection = true) {
+bool AppUtils::start_eth(bool wait_for_connection = true) {
 
   network_mode_ = NetworkMode::kEthernet;
   WiFi.onEvent(AppUtils::eth_event);
@@ -358,15 +368,10 @@ uint8_t AppUtils::start_eth(bool wait_for_connection = true) {
   while (!eth_connected_) {
     vTaskDelay(500);
   }
-  return eth_connected_ ? 1 : 0;
+  return eth_connected_;
 }
 
-void AppUtils::stop_wifi() {
-  log_i("Wifi stopping..");
-  WiFi.disconnect(true, true);
-  WiFi.mode(WIFI_OFF);
-}
-
+#endif
 void AppUtils::loop() { ArduinoOTA.handle(); }
 
 // Find a json value
@@ -378,7 +383,7 @@ void AppUtils::loop() { ArduinoOTA.handle(); }
 //   nultiple times
 //   ok:  { "brightness" : 50 , "scene" : "1" }  is ok
 //	 if the same name occcurs more than once the code still returns only the
-//first match
+// first match
 //   not working:  { "lamps" : [ {"brightness" : 50 , "scene" : "1" } ,
 //   {"brightness" : 22 , "scene" : "1" } ] }"
 //
@@ -452,7 +457,7 @@ bool get_jsonvalue(const char *json, const char *name, long &result) {
       }
     }
   }
-  log_v("JSON VAL %s %ld" ,name, result);
+  log_v("JSON VAL %s %ld", name, result);
   return success;
 }
 

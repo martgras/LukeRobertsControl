@@ -5,14 +5,22 @@
 #include <SPIFFS.h>
 #include "LukeRobertsBle.h"
 
+void BleGattClient::init(BLEAddress device_addr) {
+  //  device_addr_ =
+  NimBLEDevice::init("");
+  //  device_addr_ = BLEAddress(LR_BLEADDRESS, 1);
+  device_addr_ = device_addr;
+  NimBLEDevice::getScan()->setActiveScan(false);
+  NimBLEDevice::getScan()->stop();
+  initialized_ = true;
+}
 bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
   log_d("Connect client");
 
+  // device_addr_ = deviceaddr;
   if (!initialized_) {
-    NimBLEDevice::init("");
-    NimBLEDevice::getScan()->setActiveScan(false);
-    NimBLEDevice::getScan()->stop();
-    initialized_ = true;
+    log_e("BleGattClient not initalized");
+    return false;
   }
   connected_ = false;
   /** No client to reuse? Create a new one. */
@@ -22,7 +30,7 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
       return false;
     }
 
-    client = NimBLEDevice::createClient(deviceaddr);
+    client = NimBLEDevice::createClient(device_addr_);
 
     log_d("New BLE client created");
 
@@ -51,7 +59,7 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
      * (seconds), default is 30. */
     client->setConnectTimeout(5);
 
-    if (!client->connect(deviceaddr, true)) {
+    if (!client->connect(device_addr_, true)) {
       /** Created a client but failed to connect, don't need to keep it as it
        * has no data */
       NimBLEDevice::deleteClient(client);
@@ -63,7 +71,7 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
   }
 
   if (!client->isConnected()) {
-    if (!client->connect(deviceaddr, true)) {
+    if (!client->connect(device_addr_, true)) {
       log_e("BLE Connect %s", "Failed to connect");
       connected_ = false;
       return false;
@@ -217,6 +225,8 @@ NimBLERemoteService *BleGattClient::service = nullptr;
 NimBLERemoteCharacteristic *BleGattClient::characteristic = nullptr;
 NimBLERemoteDescriptor *BleGattClient::remote_descriptor = nullptr;
 */
+
+BLEAddress BleGattClient::device_addr_;
 BleGattClient::on_complete_callback BleGattClient::on_connect_ = nullptr;
 BleGattClient::on_complete_callback BleGattClient::on_disconnect_ = nullptr;
 notify_callback BleGattClient::on_notify_ = nullptr;
@@ -236,7 +246,6 @@ std::map<uint8_t, std::string> scenes = {{0, "OFF"}};
 */
 int request_all_scenes(BleGattClient &client) {
   uint8_t blecmd[] = {0xA0, 0x1, 0x1, 0x0};
-
   if (!client.connected()) {
     int retry = 3;
     while (retry-- && !client.connect_to_server()) {
@@ -322,3 +331,64 @@ uint8_t get_current_scene(BleGattClient &client) {
   }
   return 0xFF;
 }
+
+#ifndef LR_BLEADDRESS
+/** Define a class to handle the callbacks when advertisments are received */
+class BleScanner : public NimBLEAdvertisedDeviceCallbacks {
+
+  static NimBLEAddress device_address;
+  static BLEUUID searched_serviceUUID;
+  void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
+
+    if (advertisedDevice->isAdvertisingService(searched_serviceUUID)) {
+      log_i("Advertised Device found: ");
+
+      log_i("Found Our Service");
+      /** stop scan before connecting */
+
+      log_i("Device found %s", advertisedDevice->toString().c_str());
+      device_address = advertisedDevice->getAddress();
+      NimBLEDevice::getScan()->stop();
+    }
+  };
+
+public:
+  static NimBLEAddress scan(BLEUUID my_serviceUUID) {
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    BleScanner cb;
+    cb.searched_serviceUUID = my_serviceUUID;
+    /** create a callback that gets called when advertisers are found */
+    pScan->setAdvertisedDeviceCallbacks(&cb);
+
+    /** Set scan interval (how often) and window (how long) in milliseconds */
+    pScan->setInterval(45);
+    pScan->setWindow(15);
+
+    /** Active scan will gather scan response data from advertisers
+     *  but will use more energy from both devices
+     */
+    pScan->setActiveScan(true);
+    /** Start scanning for advertisers for the scan time specified (in seconds)
+     * 0 = forever
+     *  Optional callback for when scanning stops.
+     */
+
+    auto result = pScan->start(5, false);
+
+    log_i("Scan complete");
+    return cb.device_address;
+  }
+};
+NimBLEAddress BleScanner::device_address;
+BLEUUID BleScanner::searched_serviceUUID;
+
+NimBLEAddress scan_for_device() {
+
+  NimBLEDevice::init("");
+
+  static NimBLEAddress adr;
+  adr = BleScanner::scan(serviceUUID);
+
+  return adr;
+}
+#endif
