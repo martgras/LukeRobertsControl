@@ -103,7 +103,7 @@ payload:
 <up/down [stepvalue]>  change the color temperature by stepvalue. if omitted stepvalue is 10
 
 #### SCENE
-topic: cmnd/\<devicename\>/KELVIN
+topic: cmnd/\<devicename\>/SCENE
 payload: 
 <absolutue value>  sets the scene to the given value . Range 1 .. number of scenes
 <up/down [stepvalue]>  Switch to the next or previous scene
