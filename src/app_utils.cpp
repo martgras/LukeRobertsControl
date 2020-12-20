@@ -89,6 +89,7 @@ void AppUtils::setupOta(
 }
 
 void AppUtils::start_network_keepalive() {
+  #ifndef USE_ETHERNET
   if (network_mode_ == NetworkMode::kWifi) {
     xTaskCreate(keep_wifi_alive,
                 "keepWiFiAlive", // Task name
@@ -98,6 +99,7 @@ void AppUtils::start_network_keepalive() {
                 nullptr          // Task handle
                 );
   }
+  #endif
 }
 
 //#########################################################################################

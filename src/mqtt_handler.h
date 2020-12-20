@@ -1,6 +1,8 @@
 #ifndef __MQTT_HANDLER_H__
 #define __MQTT_HANDLERH__
 
+#define HA_ID "LR4711"
+
 // clang-format off
 /*
 const char MQTT_DISCOVERY2[] =
@@ -61,16 +63,16 @@ const char MQTT_DISCOVERY[] =
    ", \"clr_temp_val_tpl\": \"{{value_json.CT}}\""
     ",\"max_mirs\":416"
     ",\"min_mirs\":250"
-    ",\"uniq_id\": \"LR01_LI_1\""
+    ",\"uniq_id\": \""  HA_ID  "\""
     ",\"dev\": {"
     "    \"ids\": ["
-    "        \"LR01\""
+    "        \"" HA_ID "\""
     "       ],"
 "        \"name\": \"" HOSTNAME "\","
 "        \"mdl\": \"Luke Roberts Lamp\","
 "        \"sw\": \"1.1.0.2\","
 "        \"mf\": \"msoft\""    
-    "}"    
+    "}"
 "}";
 
 const char MQTT_DISCOVERY_SENSOR[] = 
@@ -84,10 +86,10 @@ const char MQTT_DISCOVERY_SENSOR[] =
 "    \"unit_of_meas\": \"%\","
 "    \"val_tpl\": \"{{value_json['RSSI']}}\","
 "    \"ic\": \"mdi:information-outline\","
-"    \"uniq_id\": \"LR01_status\","
+"    \"uniq_id\": \"" HA_ID "_status\","
 "    \"dev\": {"
 "        \"ids\": ["
-"            \"LR01\""
+"        \"" HA_ID "\""
 "        ],"
 "        \"name\": \"" HOSTNAME "\","
 "        \"mdl\": \"Luke Roberts Lamp\","
@@ -145,12 +147,12 @@ static bool mqtt_reconnect() {
     mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
     log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
 
-    mqtt_client.beginPublish("homeassistant/light/LR01_LI_1/config",
+    mqtt_client.beginPublish("homeassistant/light/" HA_ID "/light/config",
                              strlen(MQTT_DISCOVERY), true);
     mqtt_client.write((uint8_t *)MQTT_DISCOVERY, strlen(MQTT_DISCOVERY));
     mqtt_client.endPublish();
     mqtt_client.loop();
-    mqtt_client.beginPublish("homeassistant/sensor/LR01_status/config",
+    mqtt_client.beginPublish("homeassistant/sensor/" HA_ID "_status/inkquality/config",
                              strlen(MQTT_DISCOVERY_SENSOR), true);
     mqtt_client.write((uint8_t *)MQTT_DISCOVERY_SENSOR, strlen(MQTT_DISCOVERY_SENSOR));
     mqtt_client.endPublish();

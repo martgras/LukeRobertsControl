@@ -226,11 +226,18 @@ public:
   }
 
   bool set_powerstate(bool new_power_state, bool force_dirty = false) {
+
+    if (state_.scene == 0 && new_power_state )  {
+      // Should only happen during startup
+      state_.scene = 0x1 ; 
+    }
     gatt_client_.cached_commands[kScene].is_dirty |=
         force_dirty || (new_power_state != state_.power);
     state_.power = new_power_state;
+
     gatt_client_.cached_commands[kScene].data[3] =
         (new_power_state ? state_.scene : 0);
+
     if (state_.power && gatt_client_.cached_commands[kScene].is_dirty) {
       set_dimmer(state_.brightness, true);
       //      set_colortemperature_mired(state_.mired,true);
@@ -303,7 +310,6 @@ bool set_powerstate(bool value) {
   powerstate_ = value;
 #if (RELAY_PIN == 0)
   powerstate_ = lr.set_powerstate(value, true);
-
 #else
   digitalWrite(RELAY_PIN, value ? HIGH : LOW);
 
@@ -590,6 +596,30 @@ bool set_downlight(const char *json) {
   long brightness = 0;
 
   bool success = false;
+
+
+  char onoff_state[16] ;
+  if (get_jsonvalue(json, "state",onoff_state,sizeof(onoff_state))) {
+    String value = onoff_state;
+    value.trim();
+    value.toLowerCase();
+    if ( value == "off" || value == "0" || value == "false" )
+    {
+      set_powerstate(false) ;
+      // exit routine. if state is poweroff no need to parse remaining properties 
+      return true ;  
+    }
+    #if (RELAY_PIN == 0)
+      lr.set_powerstate(true,false);
+      powerstate_ = true ;
+    #else
+    if ( value == "on" || value == "1" || value == "true" )
+    {
+      set_powerstate(true) ;
+    }
+    #endif
+
+  }
   if (!get_jsonvalue(json, "duration", duration)) {
     success = get_jsonvalue(json, "d", duration);
   }
@@ -762,6 +792,7 @@ void setup() {
 #endif
   mqtt.init(network_client, parse_command);
   app.start_network();
+  app.start_network_keepalive();
 
 #ifdef LR_BLEADDRESS
   lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1));
@@ -773,8 +804,7 @@ void setup() {
   lr.client().init(device_addr);
 #endif
 
-  app.start_network();
-  app.start_network_keepalive();
+
 
   while (!app.network_connected()) {
     delay(100);
@@ -827,8 +857,8 @@ void setup() {
     auto initalscene = get_current_scene(lr.client());
     if (initalscene == 0) {
       powerstate_ = false;
-      if (lr.state().scene == 0)
-        lr.set_scene(0xFF);
+     // if (lr.state().scene == 0)
+     //   lr.set_scene(0xFF,false);
     } else {
       powerstate_ = true;
       lr.set_scene(initalscene);
