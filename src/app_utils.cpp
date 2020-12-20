@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
-#include <wifi.h>
 #ifdef USE_ETHERNET
 #include <ETH.h>
 #endif

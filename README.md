@@ -45,6 +45,8 @@ At least for homematic ip the disadvantage is a higher duty cycle because turnin
 
 The rotary switch is connected to pins 4,5 and 23 on my esp32 device. Everything fits into the wall socket
 
+
+
 ## Building
 
 This project requires PlatformIO to build 
@@ -63,6 +65,20 @@ The address is published to the MQTT topic tele/yourdevicename/BLEADDRESS
 2. Open in PlatformIO 
 4. Build and upload
 3. Updates can be sent using OTA. 
+
+
+From commandline 
+````
+python -m pip  install --upgrade pip
+pip install --upgrade platformio
+wget https://github.com/martgras/LukeRobertsControl/archive/master.zip
+unzip master.zip
+cd LukeRobertsControl-master/
+mv platformio_usersettings.ini.sample platformio_usersettings.ini
+# Edit the settings to for your environment
+# nano platformio_usersettings.ini
+pio run
+````
 
 
 ## MQTT 
