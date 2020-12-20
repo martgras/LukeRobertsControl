@@ -102,7 +102,13 @@ payload:
 <absolutue value>  sets the color temperature to the given value (in kevin). Range 2700-4000
 <up/down [stepvalue]>  change the color temperature by stepvalue. if omitted stepvalue is 10
 
-### UPLIGHT
+#### SCENE
+topic: cmnd/\<devicename\>/KELVIN
+payload: 
+<absolutue value>  sets the scene to the given value . Range 1 .. number of scenes
+<up/down [stepvalue]>  Switch to the next or previous scene
+
+#### UPLIGHT
 Modify the current light settings for uplight. Modifications are lost on power-down.
 
 duration : Duration in ms, 0 for infinite
@@ -118,7 +124,7 @@ if you prefer to specify the brightness in % use dimmer
  ````
  mosquitto_pub  -h 192.168.1.114  -t "cmnd/lrdimmer2/uplight" -m '{"d":0,"s":25,"h":53000 ,"dimmer" : 100}'
  ````
-### DOWNLIGHT
+#### DOWNLIGHT
 
 Modify the current light settings for downlight. Modifications are lost on power-down.
 
