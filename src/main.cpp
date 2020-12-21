@@ -630,12 +630,11 @@ bool set_downlight(const char *json) {
   if (!success) {
     success = get_jsonvalue(json, "k", kelvin);
     if (!success) {
-        success = get_jsonvalue(json, "ct", kelvin);
-        if (success ) {
-          kelvin = lr.switch_kelvin_mired(kelvin);
-        }
+      success = get_jsonvalue(json, "ct", kelvin);
+      if (success) {
+        kelvin = lr.switch_kelvin_mired(kelvin);
+      }
     }
-
   }
   if (success) {
     success = get_jsonvalue(json, "brightness", brightness);
@@ -838,8 +837,10 @@ void setup() {
 
   server.onNotFound(notFound);
   server.begin();
+
   int mqtt_reconnects = 0;
   last_mqttping = millis();
+  mqtt.start();
   while (!mqtt.connected()) {
     if (!mqtt.mqtt_reconnect()) {
       delay(500);
@@ -850,9 +851,11 @@ void setup() {
       }
     }
   }
-  mqtt.start();
+
   app.on_network_connect = mqtt.mqtt_reconnect;
 
+  mqtt.queue("tele/" HOSTNAME "/LWT", "Online", true);
+  
   bool result;
   int attempts = 0;
   while (!(result = lr.client().connect_to_server(
@@ -875,6 +878,8 @@ void setup() {
       ;
       lr.set_scene(initalscene);
     }
+
+  
   }
 
 #ifdef ROTARY
