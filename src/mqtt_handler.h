@@ -61,7 +61,7 @@ const char MQTT_DISCOVERY[] =
    ", \"clr_temp_cmd_t\": \"cmnd/" HOSTNAME "/CT\""
    ", \"clr_temp_stat_t\": \"stat/" HOSTNAME "/RESULT\""
    ", \"clr_temp_val_tpl\": \"{{value_json.CT}}\""
-    ",\"max_mirs\":416"
+    ",\"max_mirs\":370"
     ",\"min_mirs\":250"
     ",\"uniq_id\": \""  HA_ID  "\""
     ",\"dev\": {"
@@ -74,7 +74,7 @@ const char MQTT_DISCOVERY[] =
 "        \"mf\": \"msoft\""    
     "}"
 "}";
-
+/*
 const char MQTT_DISCOVERY_SENSOR[] = 
 "{"
 "    \"name\": \"" HOSTNAME " status\","
@@ -97,6 +97,7 @@ const char MQTT_DISCOVERY_SENSOR[] =
 "        \"mf\": \"msoft\""
 "    }"
 "}";
+*/
 // clang-format off
 
 
@@ -153,11 +154,12 @@ static bool mqtt_reconnect() {
     mqtt_client.write((uint8_t *)MQTT_DISCOVERY, strlen(MQTT_DISCOVERY));
     mqtt_client.endPublish();
     mqtt_client.loop();
+/*
     mqtt_client.beginPublish("homeassistant/sensor/" HA_ID "_status/inkquality/config",
                              strlen(MQTT_DISCOVERY_SENSOR), true);
     mqtt_client.write((uint8_t *)MQTT_DISCOVERY_SENSOR, strlen(MQTT_DISCOVERY_SENSOR));
     mqtt_client.endPublish();
-
+*/
     mqtt_client.publish("tele/" HOSTNAME "/LWT", "Online", true);
     mqtt_client.publish(
         "tele/" HOSTNAME "/INFO",

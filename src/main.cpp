@@ -629,6 +629,13 @@ bool set_downlight(const char *json) {
   success = get_jsonvalue(json, "kelvin", kelvin);
   if (!success) {
     success = get_jsonvalue(json, "k", kelvin);
+    if (!success) {
+        success = get_jsonvalue(json, "ct", kelvin);
+        if (success ) {
+          kelvin = lr.switch_kelvin_mired(kelvin);
+        }
+    }
+
   }
   if (success) {
     success = get_jsonvalue(json, "brightness", brightness);
