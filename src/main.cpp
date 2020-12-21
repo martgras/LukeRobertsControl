@@ -225,11 +225,17 @@ public:
     return state_.scene;
   }
 
+  bool sync_powerstate(bool powerstate) {
+    state_.power = powerstate;
+    return powerstate;
+  }
+
+  bool get_powerstate() { return state_.power; }
   bool set_powerstate(bool new_power_state, bool force_dirty = false) {
 
-    if (state_.scene == 0 && new_power_state )  {
+    if (state_.scene == 0 && new_power_state) {
       // Should only happen during startup
-      state_.scene = 0x1 ; 
+      state_.scene = 0x1;
     }
     gatt_client_.cached_commands[kScene].is_dirty |=
         force_dirty || (new_power_state != state_.power);
@@ -294,9 +300,8 @@ void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
 
-RTC_DATA_ATTR bool powerstate_ = false;
 ///// Command parsing //////////////
-bool get_powerstate() { return powerstate_; }
+bool get_powerstate() { return lr.get_powerstate(); }
 
 bool set_powerstate(bool value) {
 
@@ -306,15 +311,15 @@ bool set_powerstate(bool value) {
     snprintf(json, sizeof(json), "%d", lr.state().brightness);
     mqtt.queue("stat/" HOSTNAME "/POWER", value ? "ON" : "OFF");
   }
-
-  powerstate_ = value;
 #if (RELAY_PIN == 0)
-  powerstate_ = lr.set_powerstate(value, true);
+  lr.set_powerstate(value, true);
 #else
   digitalWrite(RELAY_PIN, value ? HIGH : LOW);
+  lr.sync_powerstate(value);
 
 #endif
-  return powerstate_;
+
+  return get_powerstate();
 }
 bool set_powerstate(const String &value) {
   if (value.equals("0") || value.equals("off") || value.equals("false") ||
@@ -597,28 +602,25 @@ bool set_downlight(const char *json) {
 
   bool success = false;
 
-
-  char onoff_state[16] ;
-  if (get_jsonvalue(json, "state",onoff_state,sizeof(onoff_state))) {
+  char onoff_state[16];
+  if (get_jsonvalue(json, "state", onoff_state, sizeof(onoff_state))) {
     String value = onoff_state;
     value.trim();
     value.toLowerCase();
-    if ( value == "off" || value == "0" || value == "false" )
-    {
-      set_powerstate(false) ;
-      // exit routine. if state is poweroff no need to parse remaining properties 
-      return true ;  
+    if (value == "off" || value == "0" || value == "false") {
+      set_powerstate(false);
+      // exit routine. if state is poweroff no need to parse remaining
+      // properties
+      return true;
     }
-    #if (RELAY_PIN == 0)
-      lr.set_powerstate(true,false);
-      powerstate_ = true ;
-    #else
-    if ( value == "on" || value == "1" || value == "true" )
-    {
-      set_powerstate(true) ;
-    }
-    #endif
+#if (RELAY_PIN == 0)
+    lr.set_powerstate(true, false);
 
+#else
+    if (value == "on" || value == "1" || value == "true") {
+      set_powerstate(true);
+    }
+#endif
   }
   if (!get_jsonvalue(json, "duration", duration)) {
     success = get_jsonvalue(json, "d", duration);
@@ -647,7 +649,7 @@ bool set_downlight(const char *json) {
 unsigned long last_mqttping = millis();
 
 bool parse_command(const char *command) {
-  log_d("%ld Start Parsing %s", millis(), command);
+  log_d("%ld Start Parsing %s ", millis(), command);
   auto position_space = strchr(command, ' ');
   String value;
   String cmd;
@@ -724,7 +726,7 @@ bool parse_command(const char *command) {
     AppUtils::setupOta();
     mqtt.queue("tele/" HOSTNAME "/ota", "waiting for ota start on port 3232");
     return true;
-  } else if (cmd.equals("RESULT")) {
+  } else if (cmd.equals("mqttping")) {
     last_mqttping = millis();
     log_d("got mqtt ping");
     return true;
@@ -785,30 +787,30 @@ RotaryEncoderButton rotary;
 
 void setup() {
 
-  app.on_network_connect = mqtt.mqtt_reconnect;
 //  esp_wifi_stop();
-#ifndef USE_ETHERNET
+#ifdef USE_ETHERNET
+  app.set_hostname(HOSTNAME);
+#else
   app.set_hostname(HOSTNAME).set_ssid(WIFISID).set_password(WIFIPASSWORD);
 #endif
-  mqtt.init(network_client, parse_command);
+
   app.start_network();
   app.start_network_keepalive();
+
+  while (!app.network_connected()) {
+    delay(100);
+  }
+  mqtt.init(network_client, parse_command);
 
 #ifdef LR_BLEADDRESS
   lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1));
 #else
 #pragma message(                                                               \
-    "NO BLE Device Address provided. Scanning for a Luke Roberts Lamp during startup" )
+    "NO BLE Device Address provided. Scanning for a Luke Roberts Lamp during startup")
   auto device_addr = scan_for_device();
   log_i("DEVICE : %s", device_addr.toString().c_str());
   lr.client().init(device_addr);
 #endif
-
-
-
-  while (!app.network_connected()) {
-    delay(100);
-  }
 
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -842,6 +844,8 @@ void setup() {
     }
   }
   mqtt.start();
+  app.on_network_connect = mqtt.mqtt_reconnect;
+
   bool result;
   int attempts = 0;
   while (!(result = lr.client().connect_to_server(
@@ -856,11 +860,12 @@ void setup() {
   if (result) {
     auto initalscene = get_current_scene(lr.client());
     if (initalscene == 0) {
-      powerstate_ = false;
-     // if (lr.state().scene == 0)
-     //   lr.set_scene(0xFF,false);
+      lr.sync_powerstate(false);
+      // if (lr.state().scene == 0)
+      //   lr.set_scene(0xFF,false);
     } else {
-      powerstate_ = true;
+      lr.sync_powerstate(true);
+      ;
       lr.set_scene(initalscene);
     }
   }
@@ -872,6 +877,9 @@ void setup() {
 
   rotary.set_speedup_times(50, 25);
   rotary.on_rotary_event = [&](rotary_encoder_event_t event) {
+    if (!get_powerstate())
+      return;
+
     log_v("Rotary event %d  %d (%d) %ld ", event.state.direction,
           event.state.position, event.state.speed);
     int dimmerlevel = get_dimmer_value();
@@ -920,11 +928,9 @@ void loop() {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
   });
 
-  if (millis() - last_statemsg > 60000 * 5) {
+  if (millis() - last_statemsg > 60000) {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
-    // no need for an extra message - we are subscribing to the stat message
-    // instead
-    //  mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
+    mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
     last_statemsg = millis();
 
     // usually the free heap is around 100k . If it is below 50k I must have a
@@ -939,10 +945,23 @@ void loop() {
     }
   }
   // restablish mqtt after 10 mins without an incoming ping
-  if (millis() - last_mqttping > 60000 * 10) {
+  if (millis() - last_mqttping > 1000 * 70) {
+    log_e("missing mqtt ping. trying to reconnect");
     mqtt.disconnect();
     delay(1000);
     last_mqttping = millis();
-    mqtt.mqtt_reconnect();
+    uint8_t mqtt_reconnects = 0;
+    while (!mqtt.connected()) {
+      if (!mqtt.mqtt_reconnect()) {
+        delay(500);
+        if (!mqtt.mqtt_reconnect() && mqtt_reconnects++ > 10) {
+          log_e("mqtt retry count exceeded - rebooting");
+          delay(1000);
+          esp_sleep_enable_timer_wakeup(10);
+          delay(100);
+          esp_deep_sleep_start();
+        }
+      }
+    }
   }
 }

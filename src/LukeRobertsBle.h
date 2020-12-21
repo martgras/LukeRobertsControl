@@ -205,7 +205,7 @@ private:
   static void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic,
                        uint8_t *pData, size_t length, bool isNotify) {
     log_i(
-        "%s from %s : Service = %s, Characteristic = %s, len=%d, Value=<%s> "
+        "%s from %s : Service = %s, Characteristic = %s, len=%d, Value=<%.*s> "
         "(%d)",
         (isNotify == true) ? "Notification" : "Indication",
         pRemoteCharacteristic->getRemoteService()
@@ -214,7 +214,7 @@ private:
             .toString()
             .c_str(),
         pRemoteCharacteristic->getRemoteService()->getUUID().toString().c_str(),
-        pRemoteCharacteristic->getUUID().toString().c_str(), length,
+        pRemoteCharacteristic->getUUID().toString().c_str(), length,length,
         (char *)pData, (int)pData[0]);
     if (on_notify_ != nullptr) {
       on_notify_(pRemoteCharacteristic, pData, length, isNotify);

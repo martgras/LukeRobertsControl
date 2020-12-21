@@ -12,8 +12,8 @@ build_flags = -DWIFISID='"mywifi"'
 ;            -DUSE_ETHERNET                             ## use ethernet instead of Wifi
 ;            -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'      ## if you add the device address here we can skip scanning at startup
             -DROTARY=1                                  ## use a rotary attached to esp32 
-            -DROTARY_PIN_A=GPIO_NUM_26                  ## pin a (CLK) of the rotary (Fire Beetle D3) - Set to GPIO_NUM_0 if no rotary is connected
-            -DROTARY_PIN_B=GPIO_NUM_27                  ## pin b (DT) of the rotary (Fire Beetle D4) -  Set to GPIO_NUM_0 if no rotary is connected
+            -DROTARY_PIN_A=GPIO_NUM_27                  ## pin a (CLK) of the rotary (Fire Beetle D3) - Set to GPIO_NUM_0 if no rotary is connected
+            -DROTARY_PIN_B=GPIO_NUM_26                  ## pin b (DT) of the rotary (Fire Beetle D4) -  Set to GPIO_NUM_0 if no rotary is connected
             -DROTARY_PIN_BUTTON=GPIO_NUM_25             ## input pin of the rotary switch (SW) (Fire Beetle D2) - Set to GPIO_NUM_0 if no rotary is connected
             -DRELAY_PIN=GPIO_NUM_13                     ## Relay PIN to switch for power on/off. If not defined or as GPIO_NUM_0 scene is set to 0 to turn off the lamp  
             -DEXTRA_SWITCH=GPIO_NUM_0                   ## not implemented (monitor a second switch for on / off events). Connect to pin and GND 

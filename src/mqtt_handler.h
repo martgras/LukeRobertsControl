@@ -135,6 +135,7 @@ static bool connected() {
 
 static void disconnect()
 {
+   log_i("disonnecting from  MQTT...");
   mqtt_client.disconnect();
 }
 static bool mqtt_reconnect() {
@@ -144,8 +145,8 @@ static bool mqtt_reconnect() {
     log_i("mqtt connected");
     mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
-    mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
-    log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
+  //  mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
+  //  log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
 
     mqtt_client.beginPublish("homeassistant/light/" HA_ID "/light/config",
                              strlen(MQTT_DISCOVERY), true);
@@ -179,7 +180,7 @@ private:
 
   static PubSubClient mqtt_client;
   static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
-    char message[kMaxMessageSize];
+    static char message[kMaxMessageSize];
     //std::memset(message, 0, sizeof(message));
 
     uint16_t cmdlen = 0;
@@ -219,10 +220,10 @@ private:
         // reset reconnect counter after a minute
         while (!mqtt_messages.empty()) {
           auto item = mqtt_messages.front();
-          char topic[64], msg[256];
+          char topic[64], msg[512];
           strcpy(topic, item.topic);
           strcpy(msg, item.message);
-          log_v(" Pub: %s,%s %d", item.topic, item.message,item.retained);
+          log_v(" Pub: %s,%s %d", topic, msg,item.retained);
           client->publish(topic, msg, item.retained);
           client->loop();
           vTaskDelay(1);

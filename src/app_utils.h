@@ -57,6 +57,7 @@ public:
 #ifdef USE_ETHERNET
     return start_eth(true);
 #else
+    eth_connected_ = false ; 
     return start_wifi();
 #endif
   }

@@ -89,7 +89,7 @@ void AppUtils::setupOta(
 }
 
 void AppUtils::start_network_keepalive() {
-  #ifndef USE_ETHERNET
+#ifndef USE_ETHERNET
   if (network_mode_ == NetworkMode::kWifi) {
     xTaskCreate(keep_wifi_alive,
                 "keepWiFiAlive", // Task name
@@ -99,7 +99,7 @@ void AppUtils::start_network_keepalive() {
                 nullptr          // Task handle
                 );
   }
-  #endif
+#endif
 }
 
 //#########################################################################################
@@ -168,7 +168,7 @@ void AppUtils::writecfg(void) {
 void AppUtils::keep_wifi_alive(void *) {
   for (;;) {
     if (WiFi.status() == WL_CONNECTED) {
-      vTaskDelay(10000 / portTICK_PERIOD_MS);
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
       continue;
     }
     log_w("trying to reconnect wifi");
