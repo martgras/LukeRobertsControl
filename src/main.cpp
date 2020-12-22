@@ -112,6 +112,8 @@ public:
     log_d("Brightness: %d %d  ",
           gatt_client_.cached_commands[kBrightness].is_dirty,
           state_.brightness);
+
+    sync_powerstate(gatt_client_.cached_commands[kBrightness].is_dirty);
     return state_.brightness;
   }
 
@@ -140,7 +142,7 @@ public:
         state_.kelvin = kelvin;
         state_.mired = switch_kelvin_mired(kelvin);
         cmd.on_send = [&](int) {
-          mqtt.queue("stat/" HOSTNAME "/RESULT2", this->create_state_message(),
+          mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
                      true);
         };
       }
@@ -226,6 +228,9 @@ public:
   }
 
   bool sync_powerstate(bool powerstate) {
+    if (state_.power != powerstate) {
+                   mqtt.queue("stat/" HOSTNAME "/POWER", powerstate ? "ON" : "OFF");
+    }
     state_.power = powerstate;
     return powerstate;
   }

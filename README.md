@@ -225,7 +225,7 @@ Thing mqtt:topic:lrdimmer "Lampe" (mqtt:broker:my_mosquitto) @ "Wohnzimmer" {
         Type string : reachable "Erreichbar"      [ stateTopic="tele/lrdimmer/LWT" ]
         Type switch : power     "Lampe An/Aus"    [ stateTopic="stat/lrdimmer/POWER", commandTopic="cmnd/lrdimmer/POWER" ]
         Type  dimmer :brightness "Dimmer"         [ stateTopic="stat/lrdimmer/RESULT", transformationPattern="JSONPATH:$.DIMMER",commandTopic="cmnd/lrdimmer/Dimmer", min=0,max=100]
-        Type dimmer : ColorTemp  "Farbtemperatur" [ stateTopic="stat/lrdimmer/RESULT", transformationPattern="JSONPATH:$.CT", commandTopic="cmnd/lrdimmer/ct", min=250,max=417]
+        Type dimmer : ColorTemp  "Farbtemperatur" [ stateTopic="stat/lrdimmer/RESULT", transformationPattern="JSONPATH:$.CT", commandTopic="cmnd/lrdimmer/ct", min=250,max=370]
         Type  number : scene     "Szene"          [ stateTopic="stat/lrdimmer/RESULT", transformationPattern="JSONPATH:$.SCENE", commandTopic="cmnd/lrdimmer/scene", min=1,max=8]
 
 }

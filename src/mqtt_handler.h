@@ -182,8 +182,8 @@ private:
 
   static PubSubClient mqtt_client;
   static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
-    static char message[kMaxMessageSize];
-    //std::memset(message, 0, sizeof(message));
+    static char message[kMaxMessageSize + kMaxTopicSize + 1];
+    std::memset(message, 0, sizeof(message));
 
     uint16_t cmdlen = 0;
     char *pch = strrchr(topic, '/');
