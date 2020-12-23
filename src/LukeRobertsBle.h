@@ -67,7 +67,7 @@ public:
     std::function<void(int)> on_send;
   };
 
-  static const int CACHE_SIZE_ = 5;
+  static const int CACHE_SIZE_ = 4;
   // std::vector<BleData> cached_commands;
   std::array<BleCommand, CACHE_SIZE_> cached_commands;
   std::queue<BleCommand> pending_commands;

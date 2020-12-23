@@ -1,7 +1,9 @@
 #ifndef __MQTT_HANDLER_H__
 #define __MQTT_HANDLERH__
 
-#define HA_ID "LR4711"
+#define HA_ID HOSTNAME "_device"
+
+#include <AsyncMqttClient.h>
 
 // clang-format off
 /*
@@ -44,10 +46,10 @@ const char MQTT_DISCOVERY2[] =
 const char MQTT_DISCOVERY[] = 
 "{"
     "\"name\": \"" HOSTNAME "\""
-    ",\"stat_t\": \"stat/" HOSTNAME "/POWER\""
     ",\"avty_t\": \"tele/" HOSTNAME "/LWT\""
     ",\"pl_avail\": \"Online\""
     ",\"pl_not_avail\": \"Offline\""
+    ",\"stat_t\": \"stat/" HOSTNAME "/POWER\""    
     ",\"cmd_t\": \"cmnd/" HOSTNAME "/POWER\""
 //    ",\"val_tpl\": \"{{value_json.POWER}}\""
     ",\"pl_off\": \"OFF\""
@@ -98,30 +100,31 @@ const char MQTT_DISCOVERY_SENSOR[] =
 "    }"
 "}";
 */
-// clang-format off
-
+// clang-format on
 
 class MqttPublish {
 public:
+  using mqtt_command_handler = std::function<bool(String, String)>;
 
-  using mqtt_command_handler  = std::function<bool(const char*)>;
-  
-  static void init(Client &network_client,  mqtt_command_handler command_handler=nullptr)
-  {
-    mqtt_client.setBufferSize(256);
-    mqtt_client.setClient(network_client);
+  static void init(Client &network_client,
+                   mqtt_command_handler command_handler = nullptr) {
+
     mqtt_client.setServer(MQTTHOST, MQTTPORT);
     if (command_handler) {
-      command_handler_ = std::move(command_handler );
-      mqtt_client.setCallback(mqtt_callback);
+      command_handler_ = std::move(command_handler);
+      mqtt_client.onMessage(mqtt_callback);
     }
+    mqtt_client.onConnect(on_mqtt_connect);
+    // mqtt_reconnect_timer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000),
+    // pdFALSE, (void*)0,
+    // reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
   }
   static void start() {
     pending_data = false;
     mutex_ = xSemaphoreCreateMutex();
-    xTaskCreate(send_pump, "mqttsend", 8192, (void *)&mqtt_client, 1, &pump_task_);
+    xTaskCreate(send_pump, "mqttsend", 8192, (void *)&mqtt_client, 1,
+                &pump_task_);
   }
-
 
   static void queue(const char *topic, const char *message,
                     bool retained = false) {
@@ -130,91 +133,96 @@ public:
     // xTaskNotifyGive (pump_task_);
   }
 
-static bool connected() {
-  return mqtt_client.connected();
-}
+  static bool connected() { return mqtt_client.connected(); }
 
-static void disconnect()
-{
-   log_i("disonnecting from  MQTT...");
-  mqtt_client.disconnect();
-}
-static bool mqtt_reconnect() {
-  log_i("Connecting to MQTT...");
-  if (mqtt_client.connect(HOSTNAME,MQTTUSER,MQTTPASSWORD, "tele/" HOSTNAME "/LWT", 0, true,
-                          "Offline")) {
+  static void disconnect() {
+    log_i("disonnecting from  MQTT...");
+    mqtt_client.disconnect();
+  }
+
+  static bool mqtt_reconnect() {
+    is_connected_ = true;
+    log_i("Connecting to MQTT...");
+    mqtt_client.connect();
+    while (!is_connected_) {
+      delay(50);
+    }
+    return mqtt_client.connected();
+  }
+
+  static void loop() {
+    // mqtt_client.loop();
+  }
+
+private:
+  static AsyncMqttClient mqtt_client;
+
+  static void on_mqtt_connect(bool sessionPresent) {
+
+    //      mqtt_client.onMessage(mqtt_callback);
     log_i("mqtt connected");
-    mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
+    mqtt_client.setWill("tele/" HOSTNAME "/LWT", 0, true, "Offline");
+    mqtt_client.subscribe("cmnd/" HOSTNAME "/#", 0);
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
-  //  mqtt_client.subscribe("cmnd/" HOSTNAME "/#");
-  //  log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
+    mqtt_client.subscribe("stat/" HOSTNAME "/RESULT", 0);
+    //  log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
 
-    mqtt_client.beginPublish("homeassistant/light/" HA_ID "/light/config",
-                             strlen(MQTT_DISCOVERY), true);
-    mqtt_client.write((uint8_t *)MQTT_DISCOVERY, strlen(MQTT_DISCOVERY));
-    mqtt_client.endPublish();
-    mqtt_client.loop();
-/*
-    mqtt_client.beginPublish("homeassistant/sensor/" HA_ID "_status/inkquality/config",
-                             strlen(MQTT_DISCOVERY_SENSOR), true);
-    mqtt_client.write((uint8_t *)MQTT_DISCOVERY_SENSOR, strlen(MQTT_DISCOVERY_SENSOR));
-    mqtt_client.endPublish();
-*/
-    mqtt_client.publish("tele/" HOSTNAME "/LWT", "Online", true);
+    mqtt_client.publish("homeassistant/light/" HA_ID "/light/config", 0, true,
+                        MQTT_DISCOVERY);
+    mqtt_client.publish("tele/" HOSTNAME "/LWT", 1, true, "Online");
     mqtt_client.publish(
-        "tele/" HOSTNAME "/INFO",
+        "tele/" HOSTNAME "/INFO", 0, false,
         (String("{ \"Hostname\":\"" HOSTNAME "\" \"IPAddress\":\"") +
          WiFi.localIP().toString() + ("\"}"))
             .c_str());
-    mqtt_client.loop();
-
-  } else {
-    log_i("mqtt failed with state %d", mqtt_client.state());
+    is_connected_ = true;
   }
-  return mqtt_client.connected();
-}
 
-static void loop(){
-  mqtt_client.loop();
-}
+  static void on_mqtt_disconnect(AsyncMqttClientDisconnectReason reason) {
+    /*
+      Serial.println("Disconnected from MQTT.");
 
-private:
+      if (WiFi.isConnected()) {
+        xTimerStart(mqttReconnectTimer, 0);
+      }
+    */
+    is_connected_ = false;
+  }
+  static void mqtt_callback(char *topic, char *payload,
+                            AsyncMqttClientMessageProperties properties,
+                            size_t length, size_t index, size_t total) {
 
-  static PubSubClient mqtt_client;
-  static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
-    static char message[kMaxMessageSize + kMaxTopicSize + 1];
-    std::memset(message, 0, sizeof(message));
+    String cmd;
+    char message[kMaxMessageSize];
 
-    uint16_t cmdlen = 0;
     char *pch = strrchr(topic, '/');
     if (pch && pch[1]) {
-      pch++;
-      cmdlen = strlen(pch);
-      for (int i = 0; i < cmdlen; i++) {
-        message[i] = std::tolower(*pch++);
-      }
-      message[cmdlen++] = ' ';
-      message[cmdlen] = '\0';
+      cmd = pch + 1;
+    } else {
+      cmd = topic;
     }
+
     log_i("Message arrived in topic: %s", topic);
-    if (length > kMaxMessageSize-1) {
-      length = kMaxMessageSize-1;
+
+    if (length > kMaxMessageSize - 1) {
+      length = kMaxMessageSize - 1;
     }
 
     for (int i = 0; i < length; i++) {
-      message[i + cmdlen] = std::tolower(payload[i]);
+      message[i] = std::tolower(payload[i]);
     }
-    message[length + cmdlen] = '\0';
-    log_i("Message: %s", message);
+    message[length] = '\0';
+    cmd.trim();
+    cmd.toLowerCase();
+    log_i("mqtt message: %s %s", cmd.c_str(), message);
     if (command_handler_) {
-      command_handler_(message);
+      command_handler_(cmd, message);
     }
   }
 
   static void send_pump(void *mqtt_client) {
-    PubSubClient *client = (PubSubClient *)mqtt_client;
+    auto *client = (AsyncMqttClient *)mqtt_client;
     while (true) {
-      client->loop();
       xSemaphoreTake(mutex_, portMAX_DELAY);
       // thread_notification = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
@@ -222,17 +230,15 @@ private:
         // reset reconnect counter after a minute
         while (!mqtt_messages.empty()) {
           auto item = mqtt_messages.front();
-          char topic[64], msg[512];
+          char topic[kMaxTopicSize], msg[kMaxMessageSize];
           strcpy(topic, item.topic);
           strcpy(msg, item.message);
-          log_v(" Pub: %s,%s %d", topic, msg,item.retained);
-          client->publish(topic, msg, item.retained);
-          client->loop();
+          log_v(" Pub: %s %s %d", topic, msg, item.retained);
+          client->publish(topic, 0, item.retained, msg);
           vTaskDelay(1);
           mqtt_messages.pop();
           delay(100);
         }
-
         delay(200);
       }
     }
@@ -257,17 +263,19 @@ private:
     }
   };
   static std::queue<mqtt_msg> mqtt_messages;
-  static bool pending_data;
+  volatile static bool pending_data;
   static SemaphoreHandle_t mutex_;
   static TaskHandle_t pump_task_;
-  static mqtt_command_handler command_handler_ ;  
+  static mqtt_command_handler command_handler_;
+  volatile static bool is_connected_;
 };
 
 std::queue<MqttPublish::mqtt_msg> MqttPublish::mqtt_messages;
-bool MqttPublish::pending_data;
+volatile bool MqttPublish::pending_data;
+volatile bool MqttPublish::is_connected_;
 SemaphoreHandle_t MqttPublish::mutex_;
 TaskHandle_t MqttPublish::pump_task_;
-MqttPublish::mqtt_command_handler MqttPublish::command_handler_  = nullptr;
-PubSubClient MqttPublish::mqtt_client;
-
+MqttPublish::mqtt_command_handler MqttPublish::command_handler_ = nullptr;
+AsyncMqttClient MqttPublish::mqtt_client;
+// TimerHandle_t MqttPublish::mqtt_reconnect_timer;
 #endif

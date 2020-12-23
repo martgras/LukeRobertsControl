@@ -17,3 +17,5 @@ src/main.txt
 src/rotary.cpp.txt
 src/main.txt
 workspace.code-workspace
+src/mqtt_handler-old.h
+src/main.cpp-old.txt

@@ -45,7 +45,7 @@ public:
   using Mqtt_Report_Function = std::function<void(int)>;
   using Task_function = std::function<void(void *)>;
 
-  enum slots { kScene = 0, kBrightness = 1, kColortemp = 2 };
+  enum slots { kScene = 0, kBrightness = 1, kColortemp = 2, kDownlight = 3 };
 
   struct State {
     bool power;
@@ -93,7 +93,25 @@ public:
                mqtt.queue("stat/" HOSTNAME "/SCENE", json);
              }
            }};
-    gatt_client_.queue_cmd(cmd, (uint8_t)kScene, false);
+    gatt_client_.queue_cmd(cmd, (uint8_t)kDownlight, false);
+
+/* not used so far
+    cmd = {{0xA0, 0x01, 0x02, 0x02, 0x00,0x00,0x00,0x00,0x00},
+           4,
+           false,
+           [&](int) {
+             if (state().power) {
+               char json[32];
+               snprintf(json, sizeof(json), "%d", state().brightness);
+               mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
+               snprintf(json, sizeof(json), "%d", state().mired);
+               mqtt.queue("stat/" HOSTNAME "/CT", json);
+               mqtt.queue("stat/" HOSTNAME "/RESULT",
+                          this->create_state_message(), true);
+             }
+           }};
+    gatt_client_.queue_cmd(cmd, (uint8_t)kDownlight, false);
+*/    
   }
 
   uint8_t set_dimmer(unsigned int new_dim_level, bool force_dirty = false) {
@@ -134,7 +152,7 @@ public:
       cmd.data[7] = kelvin & 0xFF;
       brightness_pos = 8;
       if (duration == 0) { // permanent ?
-        state_.brightness = (brightness / 2.56) + 0.5;
+        state_.brightness = brightness / 2.56;
         state_.kelvin = kelvin;
         state_.mired = switch_kelvin_mired(kelvin);
         cmd.on_send = [&](int) {
@@ -142,7 +160,7 @@ public:
           snprintf(json, sizeof(json), "%d", state().brightness);
           mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
           snprintf(json, sizeof(json), "%d", state().mired);
-          mqtt.queue("stat/" HOSTNAME "/CT", json);          
+          mqtt.queue("stat/" HOSTNAME "/CT", json);
           mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
                      true);
         };
@@ -663,7 +681,7 @@ unsigned long last_mqttping = millis();
 bool parse_command(String cmd, String value) {
 
   log_d("%ld Start Parsing %s %s ", millis(), cmd.c_str(), value.c_str());
-  bool has_value  = value.length() > 0; 
+  bool has_value = value.length() > 0;
 
   // is this a json command
   if (cmd.equals("uplight")) {
