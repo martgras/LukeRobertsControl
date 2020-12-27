@@ -61,8 +61,24 @@ public:
     return start_wifi();
 #endif
   }
+
+  static void stop_network() {
+#ifdef USE_ETHERNET
+    return true;
+#else
+    eth_connected_ = false;
+
+    stop_wifi();
+#endif
+  }
   static void start_network_keepalive();
   static std::function<bool(void)> on_network_connect;
+
+  void static fast_restart() {
+    esp_sleep_enable_timer_wakeup(10);
+    delay(100);
+    esp_deep_sleep_start();
+  }
 
 private:
   static void keep_wifi_alive(void *parameter);

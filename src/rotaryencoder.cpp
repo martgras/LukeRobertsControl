@@ -358,31 +358,6 @@ IRAM_ATTR void RotaryEncoderButton::isr_rotenc_(void *this_ptr) {
   portEXIT_CRITICAL_ISR(&encoder->gpio_mux);
 }
 
-#ifdef TEST_ACE_INTERRUPT  
-IRAM_ATTR void RotaryEncoderButton::isr_button_(void *this_ptr) {
-  RotaryEncoderButton *encoder = (RotaryEncoderButton *)this_ptr;
-  portENTER_CRITICAL_ISR(&encoder->gpio_mux);
 
-  rotary_encoder_info_t *info = &encoder->info;
-
-  if (info->queue) {
-    rotary_encoder_event_t queue_event = {
-        .state =
-            {
-                .position = 0xFFFF,
-                //                .direction = info->state.direction,
-                //                .speed =
-                //                static_cast<rotary_encoder_speed_t>(increment),
-            },
-    };
-    BaseType_t task_woken = pdFALSE;
-    xQueueOverwriteFromISR(info->queue, &queue_event, &task_woken);
-    if (task_woken) {
-      portYIELD_FROM_ISR();
-    }
-  }
-  portEXIT_CRITICAL_ISR(&encoder->gpio_mux);
-}
-#endif
 portMUX_TYPE RotaryEncoderButton::gpio_mux = portMUX_INITIALIZER_UNLOCKED;
 }

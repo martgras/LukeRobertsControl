@@ -142,7 +142,7 @@ public:
           snprintf(json, sizeof(json), "%d", state().brightness);
           mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
           snprintf(json, sizeof(json), "%d", state().mired);
-          mqtt.queue("stat/" HOSTNAME "/CT", json);          
+          mqtt.queue("stat/" HOSTNAME "/CT", json);
           mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
                      true);
         };
@@ -663,7 +663,7 @@ unsigned long last_mqttping = millis();
 bool parse_command(String cmd, String value) {
 
   log_d("%ld Start Parsing %s %s ", millis(), cmd.c_str(), value.c_str());
-  bool has_value  = value.length() > 0; 
+  bool has_value = value.length() > 0;
 
   // is this a json command
   if (cmd.equals("uplight")) {
@@ -937,17 +937,21 @@ void loop() {
     if (ESP.getFreeHeap() < 50000) {
       log_e("POSSIBLE MEMORY LEAK detected. Free heap is %d k.  Rebooting",
             ESP.getFreeHeap() / 1024);
-      // use deepsleep instead of a regular reboot
-      esp_sleep_enable_timer_wakeup(10);
-      delay(100);
-      esp_deep_sleep_start();
+      app.fast_restart();
     }
   }
   // restablish mqtt after 10 mins without an incoming ping
-  if (millis() - last_mqttping > 1000 * 70) {
+  if (0 && millis() - last_mqttping > 1000 * 70) {
     log_e("missing mqtt ping. trying to reconnect");
+
+    app.stop_network();
     mqtt.disconnect();
-    delay(1000);
+    delay(100);
+
+    // unclear why reconnecting doesn't always work reliably - just reboot
+    app.fast_restart();
+
+    app.start_wifi();
     last_mqttping = millis();
     uint8_t mqtt_reconnects = 0;
     while (!mqtt.connected()) {
@@ -955,10 +959,8 @@ void loop() {
         delay(500);
         if (!mqtt.mqtt_reconnect() && mqtt_reconnects++ > 10) {
           log_e("mqtt retry count exceeded - rebooting");
-          delay(1000);
-          esp_sleep_enable_timer_wakeup(10);
           delay(100);
-          esp_deep_sleep_start();
+          app.fast_restart();
         }
       }
     }

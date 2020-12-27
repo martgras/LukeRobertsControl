@@ -45,7 +45,11 @@ At least for homematic ip the disadvantage is a higher duty cycle because turnin
 
 The rotary switch is connected to pins 4,5 and 23 on my esp32 device. Everything fits into the wall socket
 
+## Hardware
 
+Only an ESP32 is required to control the lamp using MQTT or HTTP
+A rotary switch can be attached to control the brightness and switch the lamp on and off. 
+You can use any GPIO PIN input pins that have an internal pull-ups (GPIO 34-39 don't have pullups)
 
 ## Building
 
@@ -144,11 +148,14 @@ if you prefer to specify the brightness in % use dimmer
 
 Modify the current light settings for downlight. Modifications are lost on power-down.
 
-duration : Duration in ms, 0 for infinite
-saturation : Range 0 - 255
-kelvin  : Range 2700- 4000
-brightness : Range 0 - 255
- or dimmer: Range 0 - 100 
+duration : Duration in ms, 0 for infinite\
+saturation : Range 0 - 255\
+kelvin : Range 2700- 4000\
+ or\
+ct : Range 250-370   (in mired instead of kelvin)\
+brightness : Range 0 - 255\
+ or\
+dimmer: Range 0 - 100
 
  ````
   mosquitto_pub  -h 192.168.1.114  -t "cmnd/lrdimmer2/downlight" -m '{"duration":9550,"kelvin":4000,"dimmer" : 0 }'

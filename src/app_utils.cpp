@@ -91,13 +91,14 @@ void AppUtils::setupOta(
 void AppUtils::start_network_keepalive() {
 #ifndef USE_ETHERNET
   if (network_mode_ == NetworkMode::kWifi) {
-    xTaskCreate(keep_wifi_alive,
-                "keepWiFiAlive", // Task name
-                8192,            // Stack size (bytes)
-                nullptr,         // Parameter
-                1,               // Task priority
-                nullptr          // Task handle
-                );
+    xTaskCreatePinnedToCore(keep_wifi_alive,
+                            "keepWiFiAlive", // Task name
+                            8192,            // Stack size (bytes)
+                            nullptr,         // Parameter
+                            1,               // Task priority
+                            nullptr,         // Task handle
+                            1                // Core 1
+                            );
   }
 #endif
 }
