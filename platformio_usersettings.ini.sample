@@ -3,7 +3,7 @@ build_flags = -DWIFISID='"mywifi"'
             -DWIFIPASSWORD='"mysecret-wifi-pwd"'
             -DMQTTUSER='nullptr'
             -DMQTTPASSWORD='nullptr'
-            -DHOSTNAME='"lrcontoller"'
+            -DHOSTNAME='"lrcontroller"'
             -DDOMAINNAME='".local"'
             -DMQTTHOST='"192.168.1.214"'
             -DMQTTPORT=1883
