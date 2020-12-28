@@ -23,13 +23,20 @@ public:
   friend uint8_t get_current_scene(BleGattClient &client);
 
   using on_complete_callback = std::function<void()>;
+  using on_downlight_callback =
+      std::function<void(uint8_t brightness, uint16_t kelvin)>;
 
   static void init(BLEAddress device_addr);
   bool connect_to_server(on_complete_callback on_complete = nullptr);
 
-  static notify_callback &set_on_notify(notify_callback on_notify) {
+  static notify_callback set_on_notify(notify_callback on_notify) {
+    auto tmp = on_notify_;
     on_notify_ = on_notify;
-    return on_notify_;
+    return tmp;
+  }
+
+  static void set_on_downlight(on_downlight_callback on_downlight) {
+    on_downlight_notification_ = on_downlight;
   }
 
   bool connected() { return client->isConnected(); }
@@ -171,7 +178,7 @@ private:
       client.on_connect_ = notify;
     }
 
-    void set_on_diconnect(BleGattClient &client, on_complete_callback notify) {
+    void set_on_disconnect(BleGattClient &client, on_complete_callback notify) {
       client.on_disconnect_ = notify;
     }
 
@@ -201,6 +208,8 @@ private:
     };
   };
 
+  static on_downlight_callback on_downlight_notification_;
+
   /** Notification / Indication receiving handler callback */
   static void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic,
                        uint8_t *pData, size_t length, bool isNotify) {
@@ -214,8 +223,15 @@ private:
             .toString()
             .c_str(),
         pRemoteCharacteristic->getRemoteService()->getUUID().toString().c_str(),
-        pRemoteCharacteristic->getUUID().toString().c_str(), length,length,
+        pRemoteCharacteristic->getUUID().toString().c_str(), length, length,
         (char *)pData, (int)pData[0]);
+
+    if (on_downlight_notification_ != nullptr &&
+        pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
+        pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
+        pData[3] == 0x18 && pData[4] == 0x71) {
+      on_downlight_notification_(pData[7], pData[5] | pData[6] << 8);
+    }
     if (on_notify_ != nullptr) {
       on_notify_(pRemoteCharacteristic, pData, length, isNotify);
     }
@@ -223,6 +239,10 @@ private:
 
   ClientCallbacks client_cb_;
 };
+
+#ifdef USE_SCENE_MAPPER
+// Probably not neded anymore since we now have an API to request the current values for brightness and color temperature
+
 
 // Helper call. Reads/Writes  bightnesses for scenes from SPIFFS storage
 
@@ -286,18 +306,23 @@ public:
   }
 };
 
-class SceneBrightnessMapper {
+class SceneMapper {
 public:
-  SceneBrightnessMapper() {}
+  SceneMapper() {}
   static int save() {
 
     SPIFFSHelper<uint16_t> spiff;
-    if (spiff.open("/bmap.bin", "w+")) {
+    if (spiff.open("/scenemap.bin", "w+")) {
       uint16_t number_of_elements = brightness_map_.size();
+      number_of_elements = colortemperature_map_.size();
       spiff.write(number_of_elements);
       for (auto i : brightness_map_) {
         spiff.write(i);
       }
+      for (auto i : colortemperature_map_) {
+        spiff.write(i);
+      }
+
       spiff.close();
       return number_of_elements;
     } else {
@@ -308,36 +333,54 @@ public:
   static int load() {
 
     SPIFFSHelper<uint16_t> spiff;
-    File mapfile = spiff.open("/bmap.bin", "r");
+    File mapfile = spiff.open("/scenemap.bin", "r");
     if (!mapfile) {
       log_w("Failed to open file for reading");
       return save();
     }
 
-    uint16_t number_of_elements = 0;
+    uint16_t number_of_brightness_elements = 0;
+    uint16_t number_of_colortemperature_elements = 0;
     if (mapfile) {
       brightness_map_.clear();
-      spiff.read(number_of_elements);
+      colortemperature_map_.clear();
+      spiff.read(number_of_brightness_elements);
+      spiff.read(number_of_colortemperature_elements);
       uint16_t item = 0;
-      for (int i = 0; i < number_of_elements; i++) {
+      for (int i = 0; i < number_of_brightness_elements; i++) {
         spiff.read(item);
         brightness_map_.push_back(item);
       }
+      item = 0;
+      for (int i = 0; i < number_of_colortemperature_elements; i++) {
+        spiff.read(item);
+        colortemperature_map_.push_back(item);
+      }
+
       spiff.close();
     }
-    return number_of_elements;
+    return number_of_brightness_elements;
   }
 
   static int size() { return brightness_map_.size(); }
 
-  static int map(int scene) {
+  static int map_brightness(int scene) {
     if (scene >= 0 && scene < brightness_map_.size()) {
       return brightness_map_[scene];
     }
     // just add a default value ;
     return 50;
   }
-  static bool set(int scene, int brightness_level) {
+
+  static int map_colortemperature(int scene) {
+    if (scene >= 0 && scene < colortemperature_map_.size()) {
+      return colortemperature_map_[scene];
+    }
+    // just add a default value ;
+    return 50;
+  }
+
+  static bool set_brightness(int scene, int brightness_level) {
     if (scene >= 0 && scene < brightness_map_.size()) {
       brightness_map_[scene] = brightness_level;
       save();
@@ -350,10 +393,26 @@ public:
     return false;
   }
 
+  static bool set_colortemperature(int scene, int kelvin) {
+    if (scene >= 0 && scene < brightness_map_.size()) {
+      colortemperature_map_[scene] = kelvin;
+      save();
+      return true;
+    } else if (scene == colortemperature_map_.size()) {
+      colortemperature_map_.push_back(kelvin);
+      save();
+      return true;
+    }
+    return false;
+  }
+
 private:
   static std::vector<int> brightness_map_;
+  static std::vector<int> colortemperature_map_;
 };
+#endif 
 
 void get_all_scenes(BleGattClient &client);
 uint8_t get_current_scene(BleGattClient &client);
+void request_downlight_settings(BleGattClient &client);
 NimBLEAddress scan_for_device();

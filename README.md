@@ -122,11 +122,16 @@ payload:
 <absolutue value>  sets the color temperature to the given value (in kevin). Range 2700-4000
 <up/down [stepvalue]>  change the color temperature by stepvalue. if omitted stepvalue is 10
 
-#### SCENE
+
+#### ~~SCENE~~
+<del>
 topic: cmnd/\<devicename\>/SCENE
 payload: 
 <absolutue value>  sets the scene to the given value . Range 1 .. number of scenes
 <up/down [stepvalue]>  Switch to the next or previous scene
+</del>
+
+*not required anymore - the mapping is done automatically now*
 
 #### UPLIGHT
 Modify the current light settings for uplight. Modifications are lost on power-down.

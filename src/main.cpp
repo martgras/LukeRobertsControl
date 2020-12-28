@@ -70,6 +70,8 @@ public:
              char json[32];
              snprintf(json, sizeof(json), "%d", state().brightness);
              mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
+             mqtt.queue("stat/" HOSTNAME "/RESULT",
+                        this->create_state_message(), true);
            }};
     gatt_client_.queue_cmd(cmd, (uint8_t)kBrightness, false);
 
@@ -80,6 +82,8 @@ public:
              char json[32];
              snprintf(json, sizeof(json), "%d", state().mired);
              mqtt.queue("stat/" HOSTNAME "/CT", json);
+             mqtt.queue("stat/" HOSTNAME "/RESULT",
+                        this->create_state_message(), true);
            }};
     gatt_client_.queue_cmd(cmd, (uint8_t)kColortemp, false);
 
@@ -91,11 +95,32 @@ public:
                char json[32];
                snprintf(json, sizeof(json), "%d", state_.scene);
                mqtt.queue("stat/" HOSTNAME "/SCENE", json);
+               // request the current downlight settings to syn the state
+               BleGattClient::BleCommand cmd = {{0x09}, 1, true, nullptr};
+               this->client().queue_cmd(cmd);
+               // state message will be sent fro response handler
              }
            }};
     gatt_client_.queue_cmd(cmd, (uint8_t)kScene, false);
   }
 
+  // Not sure why this doesn't work from constustructor
+  void init() {
+    gatt_client_.set_on_downlight([&](uint8_t brightness, uint16_t kelvin) {
+
+      state_.brightness = brightness;
+      state_.kelvin = kelvin;
+      state_.mired = switch_kelvin_mired(state_.kelvin);
+
+      char json[32];
+      snprintf(json, sizeof(json), "%d", state().mired);
+      mqtt.queue("stat/" HOSTNAME "/CT", json);
+      snprintf(json, sizeof(json), "%d", state().brightness);
+      mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
+      mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
+                 true);
+    });
+  }
   uint8_t set_dimmer(unsigned int new_dim_level, bool force_dirty = false) {
     if (new_dim_level > 99)
       new_dim_level = 99;
@@ -221,10 +246,17 @@ public:
     gatt_client_.cached_commands[kScene].is_dirty |=
         force_dirty || (state_.scene == 0 || state_.scene != new_scene);
     state_.scene = new_scene;
-    if (state_.brightness == 0) {
-      state_.brightness = SceneBrightnessMapper::map(state_.scene);
-    }
+#ifdef OLLD
+    //    if (state_.brightness == 0) {
+    state_.brightness = SceneMapper::map_brightness(state_.scene);
+    //    }
+    //    if (state_.kelvin == 0) {
+    state_.kelvin = SceneMapper::map_colortemperature(state_.scene);
+    state_.mired = switch_kelvin_mired(state_.kelvin);
+    //    }
     gatt_client_.cached_commands[kBrightness].on_send(state_.brightness);
+    gatt_client_.cached_commands[kColortemp].on_send(state_.mired);
+#endif
     return state_.scene;
   }
 
@@ -521,7 +553,7 @@ int set_colortemperature(const String &value, bool use_kelvin = false) {
   }
   return current_value;
 }
-
+#ifdef USE_SCENE_MAPPER
 int set_scene_brightness(const String &value) {
   char *p;
   strtol(value.c_str(), &p, 10);
@@ -542,11 +574,38 @@ int set_scene_brightness(const String &value) {
       cmd = value.substring(0, param);
       scene = atol(cmd.c_str());
       dim_level = atol(param_value.c_str());
-      SceneBrightnessMapper::set(scene, dim_level);
+      SceneMapper::set_brightness(scene, dim_level);
     }
   }
-  return SceneBrightnessMapper::size();
+  return SceneMapper::size();
 }
+
+int set_scene_colortemperature(const String &value) {
+  char *p;
+  strtol(value.c_str(), &p, 10);
+  if (*p && *p != '.') {
+    log_d("Map Scene %s", value.c_str());
+    // p points to the char after the last digit. so if value is a number it
+    // points to the terminating \0
+
+    // is there another param e.g. "scene up 2"
+    auto param = value.indexOf(' ');
+
+    String param_value;
+    String cmd;
+    if (param > 0) {
+      uint8_t scene;
+      int kelvin = 3000;
+      param_value = value.substring(param + 1);
+      cmd = value.substring(0, param);
+      scene = atol(cmd.c_str());
+      kelvin = atol(param_value.c_str());
+      SceneMapper::set_colortemperature(scene, kelvin);
+    }
+  }
+  return SceneMapper::size();
+}
+#endif 
 
 void queue_ble_command(const String &value) {
   int len = value.length() / 2;
@@ -704,12 +763,14 @@ bool parse_command(String cmd, String value) {
     } else { /* return state */
     }
     return true;
+#ifdef USE_SCENE_MAPPER
   } else if (cmd.equals("mapscene")) {
     if (has_value) {
       set_scene_brightness(value);
     } else { /* return state */
     }
     return true;
+#endif
   } else if (cmd.equals("ota")) {
     AppUtils::setupOta();
     mqtt.queue("tele/" HOSTNAME "/ota", "waiting for ota start on port 3232");
@@ -799,7 +860,7 @@ void setup() {
   log_i("DEVICE : %s", device_addr.toString().c_str());
   lr.client().init(device_addr);
 #endif
-
+  lr.init();
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html, processor);
@@ -867,6 +928,8 @@ void setup() {
       ;
       lr.set_scene(initalscene);
     }
+    // returns immediatly - values will be set async in lr.client when we have a BLE response
+    request_downlight_settings(lr.client());
   }
 
 #ifdef ROTARY
@@ -924,7 +987,7 @@ void loop() {
   app_utils::AppUtils::loop();
   // mqtt.loop();
   lr.client().loop([&]() {
-    mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
+    // mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
   });
 
   if (millis() - last_statemsg > 60000) {

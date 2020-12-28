@@ -40,7 +40,7 @@ bool BleGattClient::connect_to_server(on_complete_callback on_complete) {
       this->connected_ = true;
       log_d("BLE CONNECT");
     });
-    client_cb_.set_on_diconnect(*this, [&]() {
+    client_cb_.set_on_disconnect(*this, [&]() {
       this->connected_ = false;
       log_d("BLE DISCONNECT ");
     });
@@ -230,13 +230,21 @@ BLEAddress BleGattClient::device_addr_;
 BleGattClient::on_complete_callback BleGattClient::on_connect_ = nullptr;
 BleGattClient::on_complete_callback BleGattClient::on_disconnect_ = nullptr;
 notify_callback BleGattClient::on_notify_ = nullptr;
+BleGattClient::on_downlight_callback BleGattClient::on_downlight_notification_ =
+    nullptr; // [](uint8_t,uint16_t){  log_i("=============== DEFAULT ON DOWN
+             // ===============");} ;
+
 // BleGattClient::ClientCallbacks BleGattClient::client_cb_;
 
 bool BleGattClient::initialized_ = false;
 // volatile bool BleGattClient::connected_ = false;
+#ifdef USE_SCENE_MAPPER
+std::vector<int> SceneMapper::brightness_map_ = {
+    0, 63, 71, 39, 42, 48, 10, 100}; // Load the default values
 
-std::vector<int> SceneBrightnessMapper::brightness_map_ = {
-    0, 65, 70, 50, 40, 45, 10, 98, 45}; // Load the default values
+std::vector<int> SceneMapper::colortemperature_map_ = {
+    0, 2700, 4000, 3800, 2800, 4000, 2700, 4000}; // Load the default values
+#endif 
 
 std::map<uint8_t, std::string> scenes = {{0, "OFF"}};
 
@@ -255,7 +263,6 @@ int request_all_scenes(BleGattClient &client) {
   if (!client.connected()) {
     return false;
   }
-
   SemaphoreHandle_t new_scene_received = xSemaphoreCreateBinary();
 
   auto start = millis();
@@ -269,15 +276,26 @@ int request_all_scenes(BleGattClient &client) {
 
     log_d("Client data received len: %d\n", length);
     for (auto i = 0; i < length; i++) {
-      log_d("Response byte[%d]: %d (0x%X)",i, pData[i], pData[i]);
+      log_d("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
     }
-
+    /*
+        // Current downlight brightness and colortemperatur
+        if (pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
+            pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
+            pData[3] == 0x18 && pData[4] == 0x71) {
+          uint16_t k = pData[5] | pData[6] << 8;
+          uint8_t b = pData[7];
+          log_i("Current downlight brighness = %d colortemperatur = %d", b, k);
+          return; // skip remaining processing
+        }
+    */
     // There is nothing in the response to identify if the response is from the
     // query scene request. Therefore looking at messages longer than 4 bytes
     // and
     // where the second response byte is 1 as a best guess that it must be a
     // scene response
-    if (length > 4 && pRemoteCharacteristic->getUUID() == charUUID) {
+    if (length > 4 && pRemoteCharacteristic->getUUID() == charUUID &&
+        pData[0] == 0 && pData[1] == 1) {
       char tmp[32];
       if (length > 32)
         length = 32;
@@ -311,6 +329,12 @@ int request_all_scenes(BleGattClient &client) {
   new_scene_received = nullptr;
   client.set_on_notify(prev);
   return scenes.size();
+}
+
+void request_downlight_settings(BleGattClient &client) {
+
+  BleGattClient::BleCommand cmd = {{0x09}, 1, true, nullptr};
+  client.queue_cmd(cmd);
 }
 
 void get_all_scenes(BleGattClient &client) {
@@ -369,7 +393,8 @@ public:
      *  but will use more energy from both devices
      */
     pScan->setActiveScan(true);
-    /** Start scanning for advertisers for the scan time specified (in seconds)
+    /** Start scanning for advertisers for the scan time specified (in
+     * seconds)
      * 0 = forever
      *  Optional callback for when scanning stops.
      */
