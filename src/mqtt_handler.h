@@ -163,6 +163,9 @@ public:
       return true;
     }
     mqtt_client.setKeepAlive(20);
+   if (MQTTUSER != nullptr) {
+      mqtt_client.setCredentials(MQTTUSER,MQTTPASSWORD);
+   }    
     mqtt_client.connect();
     connection_state_ = MQTT_CLIENT_CONNECTING;
     auto start_time = millis();
@@ -190,9 +193,7 @@ private:
     //      mqtt_client.onMessage(mqtt_callback);
     log_i("mqtt connected");
     mqtt_client.setWill("tele/" HOSTNAME "/LWT", 0, true, "Offline");
-    if (MQTTUSER != nullptr) {
-      mqtt_client.setCredentials(MQTTUSER,MQTTPASSWORD);
-    }
+
     mqtt_client.subscribe("cmnd/" HOSTNAME "/#", 0);
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
     //    mqtt_client.subscribe("stat/" HOSTNAME "/RESULT", 0);

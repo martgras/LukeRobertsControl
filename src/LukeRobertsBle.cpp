@@ -267,8 +267,9 @@ int request_all_scenes(BleGattClient &client) {
       NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
       size_t length, bool isNotify) {
 
+    log_d("Client data received len: %d\n", length);
     for (auto i = 0; i < length; i++) {
-      log_d("Response byte: %d (0x%X)", pData[i], pData[i]);
+      log_d("Response byte[%d]: %d (0x%X)",i, pData[i], pData[i]);
     }
 
     // There is nothing in the response to identify if the response is from the
