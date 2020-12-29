@@ -149,7 +149,7 @@ bool BleGattClient::send_queued() {
           command.on_send(0);
         }
         needs_result = true;
-        yield();
+        delay(50);
       }
     }
     // Other pending commands
@@ -157,7 +157,7 @@ bool BleGattClient::send_queued() {
       auto cmd = pending_commands.front();
       send(cmd.data, cmd.size);
       needs_result = true;
-      yield();
+      delay(100);
       pending_commands.pop();
       if (cmd.on_send) {
         cmd.on_send(0);
@@ -231,8 +231,7 @@ BleGattClient::on_complete_callback BleGattClient::on_connect_ = nullptr;
 BleGattClient::on_complete_callback BleGattClient::on_disconnect_ = nullptr;
 notify_callback BleGattClient::on_notify_ = nullptr;
 BleGattClient::on_downlight_callback BleGattClient::on_downlight_notification_ =
-    nullptr; // [](uint8_t,uint16_t){  log_i("=============== DEFAULT ON DOWN
-             // ===============");} ;
+    nullptr;
 
 // BleGattClient::ClientCallbacks BleGattClient::client_cb_;
 
@@ -244,7 +243,7 @@ std::vector<int> SceneMapper::brightness_map_ = {
 
 std::vector<int> SceneMapper::colortemperature_map_ = {
     0, 2700, 4000, 3800, 2800, 4000, 2700, 4000}; // Load the default values
-#endif 
+#endif
 
 std::map<uint8_t, std::string> scenes = {{0, "OFF"}};
 

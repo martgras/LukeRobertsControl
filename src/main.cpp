@@ -98,7 +98,7 @@ public:
            4,
            false,
            [&](int) {
-             if (state().power) {
+             /*if (true || state().power)*/ {
                char json[32];
                snprintf(json, sizeof(json), "%d", state_.scene);
                mqtt.queue("stat/" HOSTNAME "/SCENE", json);
@@ -114,7 +114,6 @@ public:
   // Not sure why this doesn't work from constustructor
   void init() {
     gatt_client_.set_on_downlight([&](uint8_t brightness, uint16_t kelvin) {
-
       state_.brightness = brightness;
       state_.kelvin = kelvin;
       state_.mired = switch_kelvin_mired(state_.kelvin);
@@ -254,7 +253,7 @@ public:
     gatt_client_.cached_commands[kScene].is_dirty |=
         force_dirty || (state_.scene == 0 || state_.scene != new_scene);
     state_.scene = new_scene;
-#ifdef OLLD
+#ifdef OLD
     //    if (state_.brightness == 0) {
     state_.brightness = SceneMapper::map_brightness(state_.scene);
     //    }

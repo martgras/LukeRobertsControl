@@ -64,7 +64,7 @@ public:
       client = nullptr;
       return false;
     }
-    yield();
+    delay(10);
   }
 
   struct BleCommand {
@@ -226,9 +226,9 @@ private:
         pRemoteCharacteristic->getUUID().toString().c_str(), length, length,
         (char *)pData, (int)pData[0]);
 
-    log_d("Client data received len: %d\n", length);
+    log_v("Client data received len: %d\n", length);
     for (auto i = 0; i < length; i++) {
-      log_d("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
+      log_v("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
     }
 
     if (on_downlight_notification_ != nullptr &&
