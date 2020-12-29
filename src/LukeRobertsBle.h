@@ -64,7 +64,7 @@ public:
       client = nullptr;
       return false;
     }
-    delay(50);
+    yield();
   }
 
   struct BleCommand {
@@ -226,6 +226,11 @@ private:
         pRemoteCharacteristic->getUUID().toString().c_str(), length, length,
         (char *)pData, (int)pData[0]);
 
+    log_d("Client data received len: %d\n", length);
+    for (auto i = 0; i < length; i++) {
+      log_d("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
+    }
+
     if (on_downlight_notification_ != nullptr &&
         pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
         pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
@@ -241,8 +246,8 @@ private:
 };
 
 #ifdef USE_SCENE_MAPPER
-// Probably not neded anymore since we now have an API to request the current values for brightness and color temperature
-
+// Probably not neded anymore since we now have an API to request the current
+// values for brightness and color temperature
 
 // Helper call. Reads/Writes  bightnesses for scenes from SPIFFS storage
 
@@ -410,7 +415,7 @@ private:
   static std::vector<int> brightness_map_;
   static std::vector<int> colortemperature_map_;
 };
-#endif 
+#endif
 
 void get_all_scenes(BleGattClient &client);
 uint8_t get_current_scene(BleGattClient &client);

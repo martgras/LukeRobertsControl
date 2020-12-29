@@ -1,22 +1,27 @@
 [usersettings]
 build_flags = -DWIFISID='"mywifi"'
             -DWIFIPASSWORD='"mysecret-wifi-pwd"'
-            -DMQTTUSER='nullptr'
+            -DMQTTUSER='nullptr'                        ## if you need mqtt user and password make sure to correctly quote them as in WIFIPASSWORD above
             -DMQTTPASSWORD='nullptr'
             -DHOSTNAME='"lrcontroller"'
-            -DDOMAINNAME='".local"'
+            -DDOMAINNAME='".local"'                     ## only used in setHostname 
             -DMQTTHOST='"192.168.1.214"'
             -DMQTTPORT=1883
             -DNTP_SERVER='"europe.pool.ntp.org"'
             -DTIMEZONE='"CET-1CEST,M3.5.0,M10.5.0/3"'
 ;            -DUSE_ETHERNET                             ## use ethernet instead of Wifi
 ;            -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'      ## if you add the device address here we can skip scanning at startup
-            -DROTARY=1                                  ## use a rotary attached to esp32 
+            -DROTARY=1                                  ## use a rotary attached to esp32
             -DROTARY_PIN_A=GPIO_NUM_27                  ## pin a (CLK) of the rotary (Fire Beetle D3) - Set to GPIO_NUM_0 if no rotary is connected
             -DROTARY_PIN_B=GPIO_NUM_26                  ## pin b (DT) of the rotary (Fire Beetle D4) -  Set to GPIO_NUM_0 if no rotary is connected
             -DROTARY_PIN_BUTTON=GPIO_NUM_25             ## input pin of the rotary switch (SW) (Fire Beetle D2) - Set to GPIO_NUM_0 if no rotary is connected
-            -DRELAY_PIN=GPIO_NUM_13                     ## Relay PIN to switch for power on/off. If not defined or as GPIO_NUM_0 scene is set to 0 to turn off the lamp  
-            -DEXTRA_SWITCH=GPIO_NUM_0                   ## not implemented (monitor a second switch for on / off events). Connect to pin and GND 
-            -DEXTRA_SWITCH_MODE=CHANGE                  ## not implemented (which event triggers a powerstate change. 
-                                                        ##     CHANGE: Whenever the switch (Schalter) postion is modified. Can be used with a regular switch   
-                                                        ##     FALLING/RISING:  use with a push button (Taster) 
+             ### LONG PRESS Behavior: LONG PRESS on the rotary button is used to switch to the next scene. LONG_PRESS_DELAY defines how long the button must be pressed for the first event.
+             ###                      LONG_PRESS_INTERVAL defines how long it takes to switch to the next scene
+;            -DLONG_PRESS_DELAY=1500                     ## number of milliseconds to start a long press event. defaults to 1500ms if not defined
+;            -DLONG_PRESS_INTERVAL=1500                  ## number of milliseconds to to fire the next long press event. defaults to 1500ms if not defined
+
+            -DRELAY_PIN=GPIO_NUM_13                     ## Relay PIN to switch for power on/off. If not defined or as GPIO_NUM_0 scene is set to 0 to turn off the lamp
+            -DEXTRA_SWITCH=GPIO_NUM_0                   ## not implemented (monitor a second switch for on / off events). Connect to pin and GND
+            -DEXTRA_SWITCH_MODE=CHANGE                  ## not implemented (which event triggers a powerstate change.
+                                                        ##     CHANGE: Whenever the switch (Schalter) postion is modified. Can be used with a regular switch
+                                                        ##     FALLING/RISING:  use with a push button (Taster)

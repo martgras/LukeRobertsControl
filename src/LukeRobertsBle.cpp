@@ -149,7 +149,7 @@ bool BleGattClient::send_queued() {
           command.on_send(0);
         }
         needs_result = true;
-        delay(50);
+        yield();
       }
     }
     // Other pending commands
@@ -157,7 +157,7 @@ bool BleGattClient::send_queued() {
       auto cmd = pending_commands.front();
       send(cmd.data, cmd.size);
       needs_result = true;
-      delay(50);
+      yield();
       pending_commands.pop();
       if (cmd.on_send) {
         cmd.on_send(0);
@@ -274,21 +274,6 @@ int request_all_scenes(BleGattClient &client) {
       NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
       size_t length, bool isNotify) {
 
-    log_d("Client data received len: %d\n", length);
-    for (auto i = 0; i < length; i++) {
-      log_d("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
-    }
-    /*
-        // Current downlight brightness and colortemperatur
-        if (pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
-            pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
-            pData[3] == 0x18 && pData[4] == 0x71) {
-          uint16_t k = pData[5] | pData[6] << 8;
-          uint8_t b = pData[7];
-          log_i("Current downlight brighness = %d colortemperatur = %d", b, k);
-          return; // skip remaining processing
-        }
-    */
     // There is nothing in the response to identify if the response is from the
     // query scene request. Therefore looking at messages longer than 4 bytes
     // and

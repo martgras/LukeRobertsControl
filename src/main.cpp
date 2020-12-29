@@ -17,6 +17,13 @@
 
 #ifdef ROTARY
 #include "rotaryencoder.h"
+
+#ifndef LONG_PRESS_DELAY
+#define LONG_PRESS_DELAY 1500
+#endif
+#ifndef LONG_PRESS_INTERVAL
+#define LONG_PRESS_INTERVAL 1500
+#endif
 #endif
 
 using namespace app_utils;
@@ -138,6 +145,7 @@ public:
     return state_.brightness;
   }
 
+  void restore_state(const State &state) { state_ = state; }
   unsigned int switch_kelvin_mired(unsigned int value) {
     return (1000000 / value);
   }
@@ -268,12 +276,26 @@ public:
     return powerstate;
   }
 
+  bool sync_scene(unsigned int new_scene) {
+    state_.scene = new_scene;
+    return new_scene;
+  }
   bool get_powerstate() { return state_.power; }
-  bool set_powerstate(bool new_power_state, bool force_dirty = false) {
 
-    if (state_.scene == 0 && new_power_state) {
-      // Should only happen during startup
-      state_.scene = 0x1;
+  bool set_powerstate(bool new_power_state, bool force_dirty = false) {
+    if (new_power_state == true) {
+
+      restore_state(saved_state_);
+      if (state_.scene == 0) {
+        // Should only happen during startup
+        state_.scene = 0xFF;
+      }
+    }
+    if (new_power_state == false) {
+      // Backup state so that we can restore it at power on
+      saved_state_ = state_;
+      state_.kelvin = state_.mired = 0;
+      state_.brightness = 0;
     }
     gatt_client_.cached_commands[kScene].is_dirty |=
         force_dirty || (new_power_state != state_.power);
@@ -283,8 +305,12 @@ public:
         (new_power_state ? state_.scene : 0);
 
     if (state_.power && gatt_client_.cached_commands[kScene].is_dirty) {
-      set_dimmer(state_.brightness, true);
-      //      set_colortemperature_mired(state_.mired,true);
+      if (state_.brightness != 0xFF) {
+        set_dimmer(state_.brightness, true);
+      }
+      if (state_.mired != 0) {
+        set_colortemperature_mired(state_.mired, true);
+      }
     }
     return state_.power;
   }
@@ -329,8 +355,11 @@ private:
   volatile bool sending = false;
   BleGattClient gatt_client_;
   State state_;
+  RTC_DATA_ATTR static State saved_state_;
 };
 
+RTC_DATA_ATTR LR_Ble_Device::State
+    LR_Ble_Device::saved_state_; // store settings before power-off
 RTC_DATA_ATTR LR_Ble_Device lr;
 AsyncWebServer server(80);
 
@@ -343,19 +372,20 @@ bool get_powerstate() { return lr.get_powerstate(); }
 
 bool set_powerstate(bool value) {
 
-  if (mqtt.connected()) {
-    char json[32];
-    mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message());
-    snprintf(json, sizeof(json), "%d", lr.state().brightness);
-    mqtt.queue("stat/" HOSTNAME "/POWER", value ? "ON" : "OFF");
-  }
 #if (RELAY_PIN == 0)
   lr.set_powerstate(value, true);
 #else
   digitalWrite(RELAY_PIN, value ? HIGH : LOW);
   lr.sync_powerstate(value);
-
 #endif
+  if (mqtt.connected() && value == false) {
+    char json[32];
+    mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message());
+    snprintf(json, sizeof(json), "%d", lr.state().brightness);
+    snprintf(json, sizeof(json), "%d", lr.state().mired);
+    mqtt.queue("stat/" HOSTNAME "/CT", json);
+    mqtt.queue("stat/" HOSTNAME "/POWER", value ? "ON" : "OFF");
+  }
 
   return get_powerstate();
 }
@@ -605,7 +635,7 @@ int set_scene_colortemperature(const String &value) {
   }
   return SceneMapper::size();
 }
-#endif 
+#endif
 
 void queue_ble_command(const String &value) {
   int len = value.length() / 2;
@@ -878,7 +908,7 @@ void setup() {
         parse_command(message.substring(0, position_space),
                       message.substring(position_space + 1));
       }
-      request->send(200, "text/plain", "GET: " + message);
+      request->send(200, "application/json", lr.create_state_message());
     } else {
       message = "Not a valid command message sent";
       request->send(400, "text/plain", "GET: " + message);
@@ -917,6 +947,7 @@ void setup() {
     }
   }
 
+  request_downlight_settings(lr.client());
   if (result) {
     auto initalscene = get_current_scene(lr.client());
     if (initalscene == 0) {
@@ -926,10 +957,10 @@ void setup() {
     } else {
       lr.sync_powerstate(true);
       ;
-      lr.set_scene(initalscene);
+      lr.sync_scene(initalscene);
     }
-    // returns immediatly - values will be set async in lr.client when we have a BLE response
-    request_downlight_settings(lr.client());
+    // returns immediatly - values will be set async in lr.client when we have a
+    // BLE response
   }
 
 #ifdef ROTARY
@@ -965,9 +996,10 @@ void setup() {
   };
 
   buttonConfig->setFeature(ButtonConfig::kFeatureRepeatPress);
-  //  buttonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
-  buttonConfig->setRepeatPressDelay(1500);
-  buttonConfig->setRepeatPressInterval(1500);
+  buttonConfig->setRepeatPressDelay(LONG_PRESS_DELAY);
+  buttonConfig->setRepeatPressInterval(LONG_PRESS_INTERVAL);
+  buttonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
+
 #endif
 
 #if RELAY_PIN != 0
