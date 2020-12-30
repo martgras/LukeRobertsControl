@@ -64,7 +64,7 @@ public:
 
   static void stop_network() {
 #ifdef USE_ETHERNET
-    return true;
+    return;
 #else
     eth_connected_ = false;
 
@@ -79,6 +79,8 @@ public:
     delay(100);
     esp_deep_sleep_start();
   }
+
+  bool ota_started() { return inOTA; }
 
 private:
   static void keep_wifi_alive(void *parameter);

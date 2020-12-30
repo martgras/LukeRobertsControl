@@ -4,24 +4,56 @@ build_flags = -DWIFISID='"mywifi"'
             -DMQTTUSER='nullptr'                        ## if you need mqtt user and password make sure to correctly quote them as in WIFIPASSWORD above
             -DMQTTPASSWORD='nullptr'
             -DHOSTNAME='"lrcontroller"'
-            -DDOMAINNAME='".local"'                     ## only used in setHostname 
+            -DDOMAINNAME='".local"'                     ## only used in setHostname
             -DMQTTHOST='"192.168.1.214"'
             -DMQTTPORT=1883
             -DNTP_SERVER='"europe.pool.ntp.org"'
             -DTIMEZONE='"CET-1CEST,M3.5.0,M10.5.0/3"'
 ;            -DUSE_ETHERNET                             ## use ethernet instead of Wifi
-;            -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'      ## if you add the device address here we can skip scanning at startup
-            -DROTARY=1                                  ## use a rotary attached to esp32
-            -DROTARY_PIN_A=GPIO_NUM_27                  ## pin a (CLK) of the rotary (Fire Beetle D4) - Set to GPIO_NUM_0 if no rotary is connected
-            -DROTARY_PIN_B=GPIO_NUM_26                  ## pin b (DT) of the rotary (Fire Beetle D3) -  Set to GPIO_NUM_0 if no rotary is connected
-            -DROTARY_PIN_BUTTON=GPIO_NUM_25             ## input pin of the rotary switch (SW) (Fire Beetle D2) - Set to GPIO_NUM_0 if no rotary is connected
-             ### LONG PRESS Behavior: LONG PRESS on the rotary button is used to switch to the next scene. LONG_PRESS_DELAY defines how long the button must be pressed for the first event.
-             ###                      LONG_PRESS_INTERVAL defines how long it takes to switch to the next scene
-;            -DLONG_PRESS_DELAY=1500                     ## number of milliseconds to start a long press event. defaults to 1500ms if not defined
-;            -DLONG_PRESS_INTERVAL=1500                  ## number of milliseconds to to fire the next long press event. defaults to 1500ms if not defined
+## Define network parameters
+##   if not defined use DHCP
+;            -DIP_ADDR='"192.168.1.69"'
+            -DIP_SUBNET='"255.255.255.0"'               # these values are ignored if IP_ADDR is not defined
+            -DIP_GATEWAY='"192.168.1.1"'                #
+            -DDNS_SERVER='"192.168.1.9"'                #   dns is only required to contact the NTP Server
+            -DDNS_SERVER2='"192.168.1.19"'              #   optional second DNS Server
 
-            -DRELAY_PIN=GPIO_NUM_13                     ## Relay PIN to switch for power on/off. If not defined or as GPIO_NUM_0 scene is set to 0 to turn off the lamp
-            -DEXTRA_SWITCH=GPIO_NUM_0                   ## not implemented (monitor a second switch for on / off events). Connect to pin and GND
-            -DEXTRA_SWITCH_MODE=CHANGE                  ## not implemented (which event triggers a powerstate change.
-                                                        ##     CHANGE: Whenever the switch (Schalter) postion is modified. Can be used with a regular switch
-                                                        ##     FALLING/RISING:  use with a push button (Taster)
+;            -DLR_BLEADDRESS='"c4:b9:71:da:19:c7"'      ## if you add the device address here we can skip scanning at startup
+
+## Define hardware otpions
+            -DROTARY_PIN_A=GPIO_NUM_26                   ## pin A (CLK) of the rotary (Fire Beetle D3)
+            -DROTARY_PIN_B=GPIO_NUM_27                   ## pin B (DT) of the rotary (Fire Beetle D4)
+;            -DROTARY_STEP_VALUE=5                       ## value change for every event. Default is 5
+;            -DROTARY_DOUBLE_SPEED_INTERVAL=60           ## if less than 60 ms between 2 events double ROTARY_STEP_VALUE
+;            -DROTARY_QUAD_SPEED_INTERVAL=30             ## if less than 30 ms between 2 events use 4 * ROTARY_STEP_VALUE
+            -DROTARY_BUTTON_PIN=GPIO_NUM_25              ## input pin of the rotary switch (SW) (Fire Beetle D2)
+;            -DROTARY_BUTTON_PIN_CLICK_ACTION=kPowerToggle ## Modifiy the function attached to the action
+;            -DROTARY_BUTTON_PIN_LONG_PRESS_ACTION=kNoop
+
+;            -DRELAY_PIN=GPIO_NUM_23
+;             -DSWITCH_PIN=GPIO_NUM_21                   ## Use a toggle switch (on/off switch not a button). triggers whenever the position is changed
+
+## control from a single button
+## click == toggle , long press tune up /mdown, double ckick change scene
+;            -DSINGLE_BUTTON_PIN=GPIO_NUM_19
+            -DSINGLE_BUTTON_DOUBLE_CLICK_ACTION=kNextScene
+            -DSINGLE_BUTTON_STEP_VALUE=20
+
+
+;           -DRESISTOR_BUTTON_PIN=35                    ## Defines 3 buttons connected one GPIO using voltage dividers
+            -DRESISTOR_BUTTON_UP=1000                   ## ADC reading for button
+            -RESISTOR_BUTTON_UP_CLICK_ACTION=kChangeBrightness
+            -DRESISTOR_BUTTON_DOWN=1700
+            -DRESISTOR_BUTTON_SWITCH=3000
+
+
+;            -DBUTTON_DOWN_PIN=GPIO_NUM_5                ## regular push buttons attached to GPIO
+;            -DBUTTON_DOWN_PIN_LONG_PRESS_ACTION=kNoop  ## the the action to no operation 
+;            -DBUTTON_UP_PIN=GPIO_NUM_17                 ##
+;            -DBUTTON_UP_PIN_STEP_VALUE=20              ## Change the step value for the button
+
+            ### LONG PRESS Behavior: LONG PRESS on the rotary button is used to switch to the next scene. LONG_PRESS_DELAY defines how long the button must be pressed for the first event.
+            ###                      LONG_PRESS_INTERVAL defines how long it takes to switch to the next scene
+;            -DLONG_PRESS_DELAY=1500                     ## number of milliseconds to start a long press event. defaults to 1500ms if not defined
+;            -DLONG_PRESS_INTERVAL=1500                  ## number of milliseconds to fire the next long press event. defaults to 1500ms if not defined
+;            -DDOUBLE_CLICK_INTERVAL=500                  ## max number of milliseconds to between 2 clicks to be a double click. defaults to 500ms if not defined
