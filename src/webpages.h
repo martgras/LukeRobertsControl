@@ -1,3 +1,6 @@
+#ifndef __WEBPAGES_H__
+#define __WEBPAGES_H__
+
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML>
 <html>
@@ -241,3 +244,5 @@ select::-ms-expand {
 
 </html>
 )rawliteral";
+
+#endif

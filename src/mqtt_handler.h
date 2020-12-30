@@ -136,8 +136,8 @@ public:
   }
 
   static void queue(const char *topic, const char *message,
-                    bool retained = false) {
-    mqtt_messages.emplace(topic, message, retained);
+                    bool retained = false, uint8_t qos = 0) {
+    mqtt_messages.emplace(topic, message, retained, qos);
     xSemaphoreGive(mutex_);
     // xTaskNotifyGive (pump_task_);
   }
@@ -162,10 +162,10 @@ public:
       log_i(" already connected to MQTT ");
       return true;
     }
-    mqtt_client.setKeepAlive(20);
-   if (MQTTUSER != nullptr) {
-      mqtt_client.setCredentials(MQTTUSER,MQTTPASSWORD);
-   }    
+    mqtt_client.setKeepAlive(90);
+    if (MQTTUSER != nullptr) {
+      mqtt_client.setCredentials(MQTTUSER, MQTTPASSWORD);
+    }
     mqtt_client.connect();
     connection_state_ = MQTT_CLIENT_CONNECTING;
     auto start_time = millis();
@@ -194,7 +194,7 @@ private:
     log_i("mqtt connected");
     mqtt_client.setWill("tele/" HOSTNAME "/LWT", 0, true, "Offline");
 
-    mqtt_client.subscribe("cmnd/" HOSTNAME "/#", 0);
+    mqtt_client.subscribe("cmnd/" HOSTNAME "/#", 2);
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
     //    mqtt_client.subscribe("stat/" HOSTNAME "/RESULT", 0);
     //  log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
@@ -221,7 +221,7 @@ private:
       }
     */
     connection_state_ = MQTT_CLIENT_DISCONNECTED;
-    log_i("Mqtt was disconnected");
+    log_w("Mqtt was disconnected %d", reason);
     vTaskDelete(pump_task_);
     vSemaphoreDelete(mutex_);
 
@@ -303,14 +303,17 @@ private:
     char topic[kMaxTopicSize];
     char message[kMaxMessageSize];
     bool retained = false;
+    uint8_t qos = 0;
 
     mqtt_msg() = default;
-    mqtt_msg(const char *topic, const char *message, bool retained = false) {
+    mqtt_msg(const char *topic, const char *message, bool retained = false,
+             bool qos = 0) {
       strncpy(this->topic, topic, kMaxTopicSize);
       this->topic[kMaxTopicSize - 1] = '\0';
       strncpy(this->message, message, kMaxMessageSize);
       this->message[kMaxMessageSize - 1] = '\0';
       this->retained = retained;
+      this->qos = qos;
     }
   };
   static std::queue<mqtt_msg> mqtt_messages;

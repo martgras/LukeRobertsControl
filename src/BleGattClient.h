@@ -8,15 +8,6 @@
 #include <queue>
 #include <NimBLEDevice.h>
 
-// The remote service we wish to connect to.
-static BLEUUID serviceUUID("44092840-0567-11E6-B862-0002A5D5C51B");
-// The characteristic of the remote service we are interested in.
-static BLEUUID charUUID("44092842-0567-11E6-B862-0002A5D5C51B");
-// static BLEUUID descUUID("00002902-0000-1000-8000-00805f9b34fb");
-static BLEUUID charUUID_Scene("44092844-0567-11E6-B862-0002A5D5C51B");
-
-// static BLEAddress device_addr_ = BLEAddress(LR_BLEADDRESS, 1);
-
 class BleGattClient {
 
 public:
@@ -26,8 +17,9 @@ public:
   using on_downlight_callback =
       std::function<void(uint8_t brightness, uint16_t kelvin)>;
 
-  static void init(BLEAddress device_addr);
-  bool connect_to_server(on_complete_callback on_complete = nullptr);
+  static void init(BLEAddress device_addr, BLEUUID service_uuid);
+  bool connect_to_server(BLEUUID charUUID,
+                         on_complete_callback on_complete = nullptr);
 
   static notify_callback set_on_notify(notify_callback on_notify) {
     auto tmp = on_notify_;
@@ -35,28 +27,24 @@ public:
     return tmp;
   }
 
-  static void set_on_downlight(on_downlight_callback on_downlight) {
-    on_downlight_notification_ = on_downlight;
-  }
-
   bool connected() { return client->isConnected(); }
 
-  void write(const uint8_t *data, size_t length) {
+  bool write(const uint8_t *data, size_t length) {
     log_i("WrittBLE");
-    characteristic->writeValue(const_cast<uint8_t *>(data), length, true);
+    return characteristic->writeValue(const_cast<uint8_t *>(data), length,
+                                      true);
   }
 
   bool send(const uint8_t *data, size_t length) {
-    log_i("BLE GATT SEND");
+    log_d("BLE GATT SEND");
     int attempts = 5;
     while (connected_ != true && attempts-- > 0) {
-      connected_ = connect_to_server();
+      connected_ = connect_to_server(charUUID);
     }
     if (connected_) {
-      log_i("We are now connected to the BLE Server.");
-
-      characteristic->writeValue(const_cast<uint8_t *>(data), length, true);
-      return true;
+      log_i("Connected to the BLE Server.");
+      return characteristic->writeValue(const_cast<uint8_t *>(data), length,
+                                        true);
     } else {
       log_e("Failed to connect to the ble server");
       NimBLEDevice::deleteClient(client);
@@ -64,7 +52,6 @@ public:
       client = nullptr;
       return false;
     }
-    delay(10);
   }
 
   struct BleCommand {
@@ -107,11 +94,15 @@ public:
 
   static BLEAddress device_addr_;
 
-private:
+  static BLEUUID serviceUUID;
+  static BLEUUID charUUID;
+
   NimBLERemoteService *service;
   NimBLERemoteCharacteristic *characteristic;
   NimBLERemoteDescriptor *remote_descriptor;
   NimBLEClient *client;
+
+private:
   static notify_callback on_notify_;
   static bool initialized_;
   volatile bool connected_;
@@ -208,8 +199,59 @@ private:
     };
   };
 
-  static on_downlight_callback on_downlight_notification_;
+  using match_func_t = std::function<bool(NimBLERemoteCharacteristic *,
+                                          uint8_t *, size_t, bool)>;
 
+  struct ble_notify_callback_t {
+    uint8_t id;
+    bool is_enabled;
+    match_func_t match;
+    notify_callback notify;
+  };
+
+  static std::list<ble_notify_callback_t> callbacks_;
+
+public:
+  static bool matches_api_characteristics(NimBLEUUID uuid) {
+    return uuid.equals(charUUID);
+  }
+
+  void register_callback_notification(uint8_t id, match_func_t match_func,
+                                      notify_callback notify_func,
+                                      bool enable = true) {
+    ble_notify_callback_t new_cb = {id, enable, match_func, notify_func};
+    for (auto &c : callbacks_) {
+      if (c.id == id) {
+        c = new_cb;
+        return;
+      }
+    }
+    callbacks_.push_back(new_cb);
+  }
+
+  bool enable_callback_notification(uint8_t id, bool enable) {
+    for (auto &c : callbacks_) {
+      if (c.id == id) {
+        c.is_enabled = enable;
+        return true; // entry found
+      }
+    }
+    return false; // entry not found
+  }
+
+  bool unregister_callback_notification(uint8_t id) {
+    for (auto it = callbacks_.begin(); it != callbacks_.end();) {
+      if (it->id == id) {
+        it = callbacks_.erase(it);
+        return true;
+      } else {
+        ++it;
+      }
+    }
+    return false;
+  }
+
+private:
   /** Notification / Indication receiving handler callback */
   static void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic,
                        uint8_t *pData, size_t length, bool isNotify) {
@@ -230,13 +272,20 @@ private:
     for (auto i = 0; i < length; i++) {
       log_v("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
     }
-
-    if (on_downlight_notification_ != nullptr &&
-        pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
-        pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
-        pData[3] == 0x18 && pData[4] == 0x71) {
-      on_downlight_notification_(pData[7], pData[5] | pData[6] << 8);
+    for (auto cb : callbacks_) {
+      if (cb.is_enabled &&
+          cb.match(pRemoteCharacteristic, pData, length, isNotify)) {
+        cb.notify(pRemoteCharacteristic, pData, length, isNotify);
+      }
     }
+    /*
+        if (on_downlight_notification_ != nullptr &&
+            pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
+            pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
+            pData[3] == 0x18 && pData[4] == 0x71) {
+          on_downlight_notification_(pData[7], pData[5] | pData[6] << 8);
+        }
+    */
     if (on_notify_ != nullptr) {
       on_notify_(pRemoteCharacteristic, pData, length, isNotify);
     }
@@ -245,179 +294,7 @@ private:
   ClientCallbacks client_cb_;
 };
 
-#ifdef USE_SCENE_MAPPER
-// Probably not neded anymore since we now have an API to request the current
-// values for brightness and color temperature
-
-// Helper call. Reads/Writes  bightnesses for scenes from SPIFFS storage
-
-template <typename T> class SPIFFSHelper {
-public:
-  File file_;
-  File open(const char *filename, const char *mode) {
-    if (!SPIFFS.begin(true)) {
-      log_e("An Error has occurred while mounting SPIFFS");
-      return File();
-    }
-    file_ = SPIFFS.open(filename, mode);
-    return file_;
-  }
-
-  void close() {
-    file_.close();
-    SPIFFS.end();
-  }
-  SPIFFSHelper() {}
-
-  ~SPIFFSHelper() { close(); }
-  size_t read(File &file, T &element) {
-    return file.read((uint8_t *)&element, sizeof(T));
-  }
-  size_t read(T &element) { return read(file_, element); }
-
-  size_t write(File &file, const T &element) {
-    return file.write((const uint8_t *)&element, sizeof(T));
-  }
-  size_t write(const T &element) { return write(file_, element); }
-
-  bool write(const char *filename, T &element) {
-    if (!SPIFFS.begin(true)) {
-      log_e("An Error has occurred while mounting SPIFFS");
-      return false;
-    }
-    File mapfile = SPIFFS.open(filename, "w+");
-    if (mapfile) {
-      write(mapfile, &element);
-      mapfile.close();
-      SPIFFS.end();
-      return true;
-    }
-    return false;
-  }
-
-  bool read(const char *filename, T &element) {
-    if (!SPIFFS.begin(true)) {
-      log_e("An Error has occurred while mounting SPIFFS");
-      return false;
-    }
-    File mapfile = SPIFFS.open(filename, "r");
-    if (mapfile) {
-      read(mapfile, &element);
-      mapfile.close();
-      SPIFFS.end();
-      return true;
-    }
-    return false;
-  }
-};
-
-class SceneMapper {
-public:
-  SceneMapper() {}
-  static int save() {
-
-    SPIFFSHelper<uint16_t> spiff;
-    if (spiff.open("/scenemap.bin", "w+")) {
-      uint16_t number_of_elements = brightness_map_.size();
-      number_of_elements = colortemperature_map_.size();
-      spiff.write(number_of_elements);
-      for (auto i : brightness_map_) {
-        spiff.write(i);
-      }
-      for (auto i : colortemperature_map_) {
-        spiff.write(i);
-      }
-
-      spiff.close();
-      return number_of_elements;
-    } else {
-      log_e("Can't create brightness mapfile");
-    }
-    return 0;
-  }
-  static int load() {
-
-    SPIFFSHelper<uint16_t> spiff;
-    File mapfile = spiff.open("/scenemap.bin", "r");
-    if (!mapfile) {
-      log_w("Failed to open file for reading");
-      return save();
-    }
-
-    uint16_t number_of_brightness_elements = 0;
-    uint16_t number_of_colortemperature_elements = 0;
-    if (mapfile) {
-      brightness_map_.clear();
-      colortemperature_map_.clear();
-      spiff.read(number_of_brightness_elements);
-      spiff.read(number_of_colortemperature_elements);
-      uint16_t item = 0;
-      for (int i = 0; i < number_of_brightness_elements; i++) {
-        spiff.read(item);
-        brightness_map_.push_back(item);
-      }
-      item = 0;
-      for (int i = 0; i < number_of_colortemperature_elements; i++) {
-        spiff.read(item);
-        colortemperature_map_.push_back(item);
-      }
-
-      spiff.close();
-    }
-    return number_of_brightness_elements;
-  }
-
-  static int size() { return brightness_map_.size(); }
-
-  static int map_brightness(int scene) {
-    if (scene >= 0 && scene < brightness_map_.size()) {
-      return brightness_map_[scene];
-    }
-    // just add a default value ;
-    return 50;
-  }
-
-  static int map_colortemperature(int scene) {
-    if (scene >= 0 && scene < colortemperature_map_.size()) {
-      return colortemperature_map_[scene];
-    }
-    // just add a default value ;
-    return 50;
-  }
-
-  static bool set_brightness(int scene, int brightness_level) {
-    if (scene >= 0 && scene < brightness_map_.size()) {
-      brightness_map_[scene] = brightness_level;
-      save();
-      return true;
-    } else if (scene == brightness_map_.size()) {
-      brightness_map_.push_back(brightness_level);
-      save();
-      return true;
-    }
-    return false;
-  }
-
-  static bool set_colortemperature(int scene, int kelvin) {
-    if (scene >= 0 && scene < brightness_map_.size()) {
-      colortemperature_map_[scene] = kelvin;
-      save();
-      return true;
-    } else if (scene == colortemperature_map_.size()) {
-      colortemperature_map_.push_back(kelvin);
-      save();
-      return true;
-    }
-    return false;
-  }
-
-private:
-  static std::vector<int> brightness_map_;
-  static std::vector<int> colortemperature_map_;
-};
-#endif
-
-void get_all_scenes(BleGattClient &client);
-uint8_t get_current_scene(BleGattClient &client);
-void request_downlight_settings(BleGattClient &client);
+// void get_all_scenes(BleGattClient &client);
+// uint8_t get_current_scene(BleGattClient &client);
+// void request_downlight_settings(BleGattClient &client);
 NimBLEAddress scan_for_device();

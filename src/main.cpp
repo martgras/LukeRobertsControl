@@ -8,15 +8,23 @@
 #include <AsyncTCP.h>
 #include <SPIFFS.h>
 #include <ESPAsyncWebServer.h>
-#include "app_utils.h"
-#include "LukeRobertsBle.h"
-#include "esp_wifi.h"
-#include "WiFiGeneric.h"
-#include "webpages.h"
-#include "mqtt_handler.h"
+#include <esp_wifi.h>
+#include <WiFiGeneric.h>
 
-#ifdef ROTARY
+#include "app_utils.h"
+#include "BleGattClient.h"
+#include "lukeroberts.h"
+#include "mqtt_handler.h"
+#include "webpages.h"
+
+#if defined(ROTARY_PIN_A)
+#if !defined(ROTARY_PIN_B)
+#error "ROTARY configuration error - PIN A and B must be defined"
+#endif
 #include "rotaryencoder.h"
+#endif
+
+#include <AceButton.h>
 
 #ifndef LONG_PRESS_DELAY
 #define LONG_PRESS_DELAY 1500
@@ -24,18 +32,18 @@
 #ifndef LONG_PRESS_INTERVAL
 #define LONG_PRESS_INTERVAL 1500
 #endif
+#ifndef DOUBLE_KLICK_INTERVAL
+#define DOUBLE_KLICK_INTERVAL 400
 #endif
 
 using namespace app_utils;
 using namespace rotary_encoder;
-
-///#define RELAY_PIN GPIO_NUM_13
+using namespace ace_button;
 WiFiClient network_client;
 AppUtils app;
 
 extern boolean ble_connected;
 extern uint8_t max_scenes;
-extern std::map<uint8_t, std::string> scenes;
 
 // RTC_DATA_ATTR bool powerstate = false;
 // RTC_DATA_ATTR int16_t dimlevel = 50;
@@ -47,319 +55,12 @@ extern std::map<uint8_t, std::string> scenes;
 
 MqttPublish mqtt;
 
-class LR_Ble_Device {
-public:
-  using Mqtt_Report_Function = std::function<void(int)>;
-  using Task_function = std::function<void(void *)>;
+// provide a lamdba to call the used mqtt client (decouples mqtt library used)
+RTC_DATA_ATTR LR_Ble_Device lr([](const char *topic, const char *data,
+                                  bool retained, uint8_t qos) {
+  mqtt.queue(topic, data, retained, qos);
+});
 
-  enum slots { kScene = 0, kBrightness = 1, kColortemp = 2 };
-
-  struct State {
-    bool power;
-    uint8_t scene;
-    uint8_t brightness;
-    uint16_t mired;
-    uint16_t kelvin;
-  };
-
-  const State &state() { return state_; }
-  BleGattClient &client() { return gatt_client_; }
-
-  LR_Ble_Device() {
-
-    // Setup the cached commands
-    //
-    BleGattClient::BleCommand cmd;
-    cmd = {{0xA0, 0x01, 0x03, 0x00},
-           4,
-           false,
-           [&](int newval) {
-             char json[32];
-             snprintf(json, sizeof(json), "%d", state().brightness);
-             mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
-             mqtt.queue("stat/" HOSTNAME "/RESULT",
-                        this->create_state_message(), true);
-           }};
-    gatt_client_.queue_cmd(cmd, (uint8_t)kBrightness, false);
-
-    cmd = {{0xA0, 0x01, 0x04, 0x00, 0x00},
-           5,
-           false,
-           [&](int) {
-             char json[32];
-             snprintf(json, sizeof(json), "%d", state().mired);
-             mqtt.queue("stat/" HOSTNAME "/CT", json);
-             mqtt.queue("stat/" HOSTNAME "/RESULT",
-                        this->create_state_message(), true);
-           }};
-    gatt_client_.queue_cmd(cmd, (uint8_t)kColortemp, false);
-
-    cmd = {{0xA0, 0x02, 0x05, 0x00},
-           4,
-           false,
-           [&](int) {
-             /*if (true || state().power)*/ {
-               char json[32];
-               snprintf(json, sizeof(json), "%d", state_.scene);
-               mqtt.queue("stat/" HOSTNAME "/SCENE", json);
-               // request the current downlight settings to syn the state
-               BleGattClient::BleCommand cmd = {{0x09}, 1, true, nullptr};
-               this->client().queue_cmd(cmd);
-               // state message will be sent fro response handler
-             }
-           }};
-    gatt_client_.queue_cmd(cmd, (uint8_t)kScene, false);
-  }
-
-  // Not sure why this doesn't work from constustructor
-  void init() {
-    gatt_client_.set_on_downlight([&](uint8_t brightness, uint16_t kelvin) {
-      state_.brightness = brightness;
-      state_.kelvin = kelvin;
-      state_.mired = switch_kelvin_mired(state_.kelvin);
-
-      char json[32];
-      snprintf(json, sizeof(json), "%d", state().mired);
-      mqtt.queue("stat/" HOSTNAME "/CT", json);
-      snprintf(json, sizeof(json), "%d", state().brightness);
-      mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
-      mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
-                 true);
-    });
-  }
-  uint8_t set_dimmer(unsigned int new_dim_level, bool force_dirty = false) {
-    if (new_dim_level > 99)
-      new_dim_level = 99;
-    if (new_dim_level < 0)
-      new_dim_level = 0;
-    gatt_client_.cached_commands[kBrightness].is_dirty |=
-        force_dirty || (state_.brightness != new_dim_level);
-    state_.brightness = new_dim_level;
-    gatt_client_.cached_commands[kBrightness].data[3] = state_.brightness;
-    log_d("Brightness: %d %d  ",
-          gatt_client_.cached_commands[kBrightness].is_dirty,
-          state_.brightness);
-
-    sync_powerstate(gatt_client_.cached_commands[kBrightness].is_dirty);
-    return state_.brightness;
-  }
-
-  void restore_state(const State &state) { state_ = state; }
-  unsigned int switch_kelvin_mired(unsigned int value) {
-    return (1000000 / value);
-  }
-
-  void set_intermmediate_light(uint8_t content_flag, uint16_t duration,
-                               uint8_t saturation, uint16_t hue,
-                               uint16_t kelvin, uint8_t brightness) {
-
-    BleGattClient::BleCommand cmd;
-    cmd.data[0] = 0xA0;
-    cmd.data[1] = 0x01;
-    cmd.data[2] = 0x02;
-    cmd.data[3] = content_flag;
-    cmd.data[4] = duration >> 8;
-    cmd.data[5] = duration & 0xFF;
-    uint8_t brightness_pos = 8;
-    if (content_flag & 2) {
-      cmd.data[6] = kelvin >> 8;
-      cmd.data[7] = kelvin & 0xFF;
-      brightness_pos = 8;
-      if (duration == 0) { // permanent ?
-        state_.brightness = (brightness / 2.56) + 0.5;
-        state_.kelvin = kelvin;
-        state_.mired = switch_kelvin_mired(kelvin);
-        cmd.on_send = [&](int) {
-          char json[32];
-          snprintf(json, sizeof(json), "%d", state().brightness);
-          mqtt.queue("stat/" HOSTNAME "/DIMMER", json);
-          snprintf(json, sizeof(json), "%d", state().mired);
-          mqtt.queue("stat/" HOSTNAME "/CT", json);
-          mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
-                     true);
-        };
-      }
-    } else {
-      cmd.data[6] = saturation;
-      cmd.data[7] = hue >> 8;
-      cmd.data[8] = hue & 0xFF;
-      brightness_pos = 9;
-      if (duration == 0) { // permanent ?
-        cmd.on_send = [&, saturation, hue, brightness](int newval) {
-          char json[32];
-          snprintf(json, sizeof(json), "%d", saturation);
-          mqtt.queue("stat/" HOSTNAME "/SATURATION", json);
-          snprintf(json, sizeof(json), "%d", hue);
-          mqtt.queue("stat/" HOSTNAME "/HUE", json);
-          snprintf(json, sizeof(json), "%d", brightness);
-          mqtt.queue("stat/" HOSTNAME "/BRIGHTNESS_UP", json);
-        };
-      }
-    }
-    cmd.data[brightness_pos] = brightness;
-    cmd.is_dirty = true;
-    cmd.size = brightness_pos + 1;
-    gatt_client_.queue_cmd(cmd);
-  }
-
-  void set_intermmediate_uplight(uint16_t duration, uint8_t saturation,
-                                 uint16_t hue, uint8_t brightness) {
-    set_intermmediate_light(1, duration, saturation, hue, 0, brightness);
-  }
-
-  void set_intermmediate_downlight(uint16_t duration, uint16_t kelvin,
-                                   uint8_t brightness) {
-    set_intermmediate_light(2, duration, 0, 0, kelvin, brightness);
-  }
-
-  uint16_t set_colortemperature_mired(unsigned new_colortemperature,
-                                      bool force_dirty = false) {
-    if (new_colortemperature < 250)
-      new_colortemperature = 250;
-    if (new_colortemperature > 370)
-      new_colortemperature = 370;
-    auto kelvin = switch_kelvin_mired(new_colortemperature);
-    gatt_client_.cached_commands[kColortemp].data[3] = kelvin >> 8;
-    gatt_client_.cached_commands[kColortemp].data[4] = kelvin & 0xFF;
-    gatt_client_.cached_commands[kColortemp].is_dirty |=
-        force_dirty || (state_.mired != new_colortemperature);
-    log_i("Color temperature to %d from %d (%d)", new_colortemperature,
-          state_.mired, kelvin);
-    state_.mired = new_colortemperature;
-    state_.kelvin = switch_kelvin_mired(new_colortemperature);
-    return new_colortemperature;
-  }
-
-  uint16_t set_colortemperature_kelvin(unsigned new_colortemperature,
-                                       bool force_dirty) {
-    if (new_colortemperature > 4000)
-      new_colortemperature = 4000;
-    if (new_colortemperature < 2700)
-      new_colortemperature = 2700;
-    gatt_client_.cached_commands[kColortemp].data[3] =
-        new_colortemperature >> 8;
-    gatt_client_.cached_commands[kColortemp].data[4] =
-        new_colortemperature & 0xFF;
-    gatt_client_.cached_commands[kColortemp].is_dirty |=
-        force_dirty || (state_.kelvin != new_colortemperature);
-    state_.kelvin = new_colortemperature;
-    state_.mired = switch_kelvin_mired(new_colortemperature);
-    return new_colortemperature;
-  }
-
-  uint8_t set_scene(unsigned int new_scene, bool force_dirty = false) {
-    new_scene &= 0xFF;
-    gatt_client_.cached_commands[kScene].data[3] = new_scene;
-    gatt_client_.cached_commands[kScene].is_dirty |=
-        force_dirty || (state_.scene == 0 || state_.scene != new_scene);
-    state_.scene = new_scene;
-#ifdef OLD
-    //    if (state_.brightness == 0) {
-    state_.brightness = SceneMapper::map_brightness(state_.scene);
-    //    }
-    //    if (state_.kelvin == 0) {
-    state_.kelvin = SceneMapper::map_colortemperature(state_.scene);
-    state_.mired = switch_kelvin_mired(state_.kelvin);
-    //    }
-    gatt_client_.cached_commands[kBrightness].on_send(state_.brightness);
-    gatt_client_.cached_commands[kColortemp].on_send(state_.mired);
-#endif
-    return state_.scene;
-  }
-
-  bool sync_powerstate(bool powerstate) {
-    if (state_.power != powerstate) {
-      mqtt.queue("stat/" HOSTNAME "/POWER", powerstate ? "ON" : "OFF");
-    }
-    state_.power = powerstate;
-    return powerstate;
-  }
-
-  bool sync_scene(unsigned int new_scene) {
-    state_.scene = new_scene;
-    return new_scene;
-  }
-  bool get_powerstate() { return state_.power; }
-
-  bool set_powerstate(bool new_power_state, bool force_dirty = false) {
-    if (new_power_state == true) {
-
-      restore_state(saved_state_);
-      if (state_.scene == 0) {
-        // Should only happen during startup
-        state_.scene = 0xFF;
-      }
-    }
-    if (new_power_state == false) {
-      // Backup state so that we can restore it at power on
-      saved_state_ = state_;
-      state_.kelvin = state_.mired = 0;
-      state_.brightness = 0;
-    }
-    gatt_client_.cached_commands[kScene].is_dirty |=
-        force_dirty || (new_power_state != state_.power);
-    state_.power = new_power_state;
-
-    gatt_client_.cached_commands[kScene].data[3] =
-        (new_power_state ? state_.scene : 0);
-
-    if (state_.power && gatt_client_.cached_commands[kScene].is_dirty) {
-      if (state_.brightness != 0xFF) {
-        set_dimmer(state_.brightness, true);
-      }
-      if (state_.mired != 0) {
-        set_colortemperature_mired(state_.mired, true);
-      }
-    }
-    return state_.power;
-  }
-
-  void send_custom(const uint8_t *data, size_t length) {
-    BleGattClient::BleCommand custom;
-    custom.is_dirty = true;
-    custom.size = length;
-    for (int i = 0; i < length && i < sizeof(custom.data); i++) {
-      custom.data[i] = data[i];
-    }
-    gatt_client_.queue_cmd(custom);
-  }
-
-  const char *create_state_message() {
-    static char statemsg[512];
-    time_t now = time(0);
-
-    // Convert now to tm struct for local timezone
-    tm *t = localtime(&now);
-
-    snprintf(statemsg, sizeof(statemsg),
-             "{\"Time\":"
-             "\"%04d-%02d-%02dT%02d:%02d:%02d\","
-             "\"Heap\":%u,\"IPAddress\":\"%s\",\"POWER\":\"%s\",\"CT\":"
-             "%d,\"KELVIN\":%d,\"DIMMER\":%d,\"SCENE\":%d}",
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
-             t->tm_min, t->tm_sec, ESP.getFreeHeap() / 1024,
-             WiFi.localIP().toString().c_str(), state_.power ? "ON" : "OFF",
-             state_.mired, state_.kelvin, state_.brightness, state_.scene);
-    return statemsg;
-  }
-
-  void loop() {
-    gatt_client_.loop([&]() {
-      mqtt.queue("stat/" HOSTNAME "/RESULT", this->create_state_message(),
-                 true);
-    });
-  }
-
-private:
-  volatile bool sending = false;
-  BleGattClient gatt_client_;
-  State state_;
-  RTC_DATA_ATTR static State saved_state_;
-};
-
-RTC_DATA_ATTR LR_Ble_Device::State
-    LR_Ble_Device::saved_state_; // store settings before power-off
-RTC_DATA_ATTR LR_Ble_Device lr;
 AsyncWebServer server(80);
 
 void notFound(AsyncWebServerRequest *request) {
@@ -371,10 +72,11 @@ bool get_powerstate() { return lr.get_powerstate(); }
 
 bool set_powerstate(bool value) {
 
-#if (RELAY_PIN == 0)
+#ifndef RELAY_PIN
   lr.set_powerstate(value, true);
 #else
   digitalWrite(RELAY_PIN, value ? HIGH : LOW);
+  //  log_i("PORT %d = %d",RELAY_PIN,value);
   lr.sync_powerstate(value);
 #endif
   if (mqtt.connected() && value == false) {
@@ -461,10 +163,10 @@ int get_scene() { return lr.state().scene; }
 
 int set_scene(int numvalue) {
   auto scene = numvalue & 0xFF;
-  if (scene > scenes.size() && scene != 0xFF)
+  if (scene > lr.scenes.size() && scene != 0xFF)
     scene = 1;
   if (scene < 1 && scene != 0xFF)
-    scene = scenes.size();
+    scene = lr.scenes.size();
 
   log_i("Set Scene Level to %d", scene);
   lr.set_scene(scene, true);
@@ -525,6 +227,8 @@ int set_colortemperature_mired(int numvalue) {
   lr.set_colortemperature_mired(numvalue, true);
   return lr.state().mired;
 }
+
+int get_colortemperature_kelvin() { return lr.state().kelvin; }
 
 int set_colortemperature_kelvin(int numvalue) {
   if (numvalue > 4000) {
@@ -707,7 +411,7 @@ bool set_downlight(const char *json) {
       // properties
       return true;
     }
-#if (RELAY_PIN == 0)
+#ifndef RELAY_PIN
     lr.set_powerstate(true, false);
 
 #else
@@ -841,8 +545,8 @@ String processor(const String &var) {
 
     String scene_html = "<br><select id=\"sceneselect\" name=\"scenes\" "
                         "onchange=\"updateScene(this)\"  size=\"" +
-                        String(scenes.size() - 1) + String("\" >");
-    for (const auto &s : scenes) {
+                        String(lr.scenes.size() - 1) + String("\" >");
+    for (const auto &s : lr.scenes) {
       if (s.first != 0) {
         scene_html += "<option" +
                       String(lr.state().scene == s.first ? " selected" : "") +
@@ -859,9 +563,15 @@ String processor(const String &var) {
 }
 
 static const char *PARAM_CMD = "cmnd";
-#ifdef ROTARY
+#if defined(ROTARY_PIN_A)
 RotaryEncoderButton rotary;
 #endif
+
+// odd place for an include but the button settings depend on the functions
+// defined above
+// until proper prototypes are created the include has to stay here
+// the button code was moved out because it is pretty repeptive, simple but long
+#include "buttons.h"
 
 void setup() {
 
@@ -881,7 +591,7 @@ void setup() {
   mqtt.init(network_client, parse_command);
 
 #ifdef LR_BLEADDRESS
-  lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1));
+  lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1), serviceUUID);
 #else
 #pragma message(                                                               \
     "NO BLE Device Address provided. Scanning for a Luke Roberts Lamp during startup")
@@ -926,7 +636,7 @@ void setup() {
       if (!mqtt.mqtt_reconnect() && mqtt_reconnects++ > 30) {
         log_e("mqtt retry count exceeded - rebooting");
         delay(100);
-        ESP.restart();
+        app.fast_restart();
       }
     }
   }
@@ -938,17 +648,17 @@ void setup() {
   bool result;
   int attempts = 0;
   while (!(result = lr.client().connect_to_server(
-               []() { get_all_scenes(lr.client()); }))) {
+               lr.charUUID(), []() { lr.get_all_scenes(lr.client()); }))) {
     delay(1000);
-    if (attempts++ == 10) {
+    if (attempts++ == 60) {
       log_e("unable to connect to BLE Device - restarting");
-      ESP.restart();
+      app.fast_restart();
+      ;
     }
   }
 
-  request_downlight_settings(lr.client());
   if (result) {
-    auto initalscene = get_current_scene(lr.client());
+    auto initalscene = lr.get_current_scene(lr.client());
     if (initalscene == 0) {
       lr.sync_powerstate(false);
       // if (lr.state().scene == 0)
@@ -958,15 +668,13 @@ void setup() {
       ;
       lr.sync_scene(initalscene);
     }
+    lr.request_downlight_settings(lr.client());
     // returns immediatly - values will be set async in lr.client when we have a
     // BLE response
   }
 
-#ifdef ROTARY
-  ESP_ERROR_CHECK(
-      rotary.init(ROTARY_PIN_A, ROTARY_PIN_B, ROTARY_PIN_BUTTON, false));
-  auto buttonConfig = rotary.getButtonConfig();
-
+#if defined(ROTARY_PIN_A)
+  ESP_ERROR_CHECK(rotary.init(ROTARY_PIN_A, ROTARY_PIN_B, false));
   rotary.set_speedup_times(50, 25);
   rotary.on_rotary_event = [&](rotary_encoder_event_t event) {
     if (!get_powerstate())
@@ -985,33 +693,21 @@ void setup() {
     set_dimmer_value(dimmerlevel + step);
 
   };
-  rotary.on_button_event = [&](uint8_t eventType, uint8_t buttonState) {
-    if (eventType == AceButton::kEventReleased) {
-      set_powerstate(!get_powerstate());
-    }
-    if (eventType == AceButton::kEventRepeatPressed) {
-      set_scene(get_scene() + 1);
-    }
-  };
-
-  buttonConfig->setFeature(ButtonConfig::kFeatureRepeatPress);
-  buttonConfig->setRepeatPressDelay(LONG_PRESS_DELAY);
-  buttonConfig->setRepeatPressInterval(LONG_PRESS_INTERVAL);
-  buttonConfig->setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
 
 #endif
 
-#if RELAY_PIN != 0
+#ifdef RELAY_PIN
   pinMode(RELAY_PIN, OUTPUT);
 #endif
+
+  button_handler::setup_buttons();
+
   log_d("Inital State: Power = %d scene %d", get_powerstate(), get_scene());
 
 #ifndef LR_BLEADDRESS
   mqtt.queue("tele/" HOSTNAME "/BLEADDRESS", device_addr.toString().c_str());
 #endif
 }
-
-#define TAG "LRGateway"
 
 void loop() {
   static unsigned long last_statemsg = 0;
@@ -1045,7 +741,7 @@ void loop() {
     // unclear why reconnecting doesn't always work reliably - just reboot
     app.fast_restart();
 
-    app.start_wifi();
+    app.start_network();
     last_mqttping = millis();
     uint8_t mqtt_reconnects = 0;
     while (!mqtt.connected()) {

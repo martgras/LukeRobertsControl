@@ -179,7 +179,23 @@ void AppUtils::keep_wifi_alive(void *) {
 
 bool AppUtils::start_wifi() {
 
-  bool haveConfig = checkCfg();
+  IPAddress ip = INADDR_NONE;
+  IPAddress subnet = INADDR_NONE;
+  IPAddress gateway = INADDR_NONE;
+  IPAddress dns1 = INADDR_NONE;
+  IPAddress dns2 = INADDR_NONE;
+
+#ifdef IP_ADDR
+  ip.fromString(IP_ADDR);
+  subnet.fromString(IP_SUBNET);
+  gateway.fromString(IP_GATEWAY);
+  dns1.fromString(DNS_SERVER);
+#ifdef DNS_SERVER2
+  dns2.fromString(DNS_SERVER2);
+#endif
+#endif
+
+  // bool haveConfig = checkCfg();
   network_mode_ = NetworkMode::kWifi;
 
   static RTC_DATA_ATTR int wifi_connect_count = 0;
@@ -227,17 +243,20 @@ bool AppUtils::start_wifi() {
   unsigned long start = millis();
   // WiFi.setTxPower(WIFI_POWER_MINUS_1dBm );
   bool AttemptConnection = true;
-
-  if (haveConfig &&
-      WiFi.config(wifi_cfgbuf.ip, wifi_cfgbuf.gw, wifi_cfgbuf.msk,
-                  wifi_cfgbuf.dns)) {
-    log_i(" (use fastconnect )");
-    WiFi.setHostname(hostname_.c_str());
-    WiFi.begin(ssid_.c_str(), password_.c_str(), wifi_cfgbuf.chl,
-               wifi_cfgbuf.mac);
-  } else {
+  // breaks DHCP because the dhcp client is not started when using static IP's
+  /*
+    if (haveConfig &&
+        WiFi.config(wifi_cfgbuf.ip, wifi_cfgbuf.gw, wifi_cfgbuf.msk,
+                    wifi_cfgbuf.dns)) {
+      log_i(" (use fastconnect )");
+      WiFi.setHostname(hostname_.c_str());
+      WiFi.begin(ssid_.c_str(), password_.c_str(), wifi_cfgbuf.chl,
+                 wifi_cfgbuf.mac);
+    } else
+  */
+  {
     log_i(" (fresh start)");
-    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+    WiFi.config(ip, gateway, subnet, dns1, dns2);
     WiFi.setHostname(hostname_.c_str());
     WiFi.begin(ssid_.c_str(), password_.c_str());
   }
@@ -257,7 +276,7 @@ bool AppUtils::start_wifi() {
           log_i("WIFI try again ..");
           connectionStatus = WiFi.status();
           delay(500);
-          WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+          WiFi.config(ip, gateway, subnet, dns1, dns2);
           WiFi.setHostname(hostname_.c_str());
           WiFi.begin(ssid_.c_str(), password_.c_str()); //,0,bssid);
           delay(4500); // from now on retry with a 5 sec interval
@@ -360,12 +379,27 @@ void AppUtils::eth_event(WiFiEvent_t event) {
 }
 
 bool AppUtils::start_eth(bool wait_for_connection = true) {
+  IPAddress ip = INADDR_NONE;
+  IPAddress subnet = INADDR_NONE;
+  IPAddress gateway = INADDR_NONE;
+  IPAddress dns1 = INADDR_NONE;
+  IPAddress dns2 = INADDR_NONE;
+
+#ifdef IP_ADDR
+  ip.fromString(IP_ADDR);
+  subnet.fromString(IP_SUBNET);
+  gateway.fromString(IP_GATEWAY);
+  dns1.fromString(DNS_SERVER);
+#ifdef DNS_SERVER2
+  dns2.fromString(DNS_SERVER2);
+#endif
+#endif
 
   network_mode_ = NetworkMode::kEthernet;
   WiFi.onEvent(AppUtils::eth_event);
   WiFi.setAutoReconnect(true);
   ETH.begin();
-  ETH.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  ETH.config(ip, gateway, subnet, dns1, dns2);
   ETH.setHostname(HOSTNAME);
   while (!eth_connected_) {
     vTaskDelay(500);

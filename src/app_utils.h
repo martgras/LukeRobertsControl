@@ -64,7 +64,7 @@ public:
 
   static void stop_network() {
 #ifdef USE_ETHERNET
-    return true;
+    return ;
 #else
     eth_connected_ = false;
 

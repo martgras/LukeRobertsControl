@@ -93,7 +93,7 @@
 #include "rotaryencoder.h"
 #include <Arduino.h>
 #include <functional>
-#include <AceButton.h>
+
 #include "esp_log.h"
 #include "driver/gpio.h"
 
@@ -190,7 +190,6 @@ void RotaryEncoderButton::reset() {
 }
 
 esp_err_t RotaryEncoderButton::init(gpio_num_t pin_a, gpio_num_t pin_b,
-                                    gpio_num_t pin_button,
                                     bool enable_halfsteps) {
   gpio_mux = portMUX_INITIALIZER_UNLOCKED;
   //   auto result = rotary_encoder_init(&info, pin_a, pin_b);
@@ -219,14 +218,6 @@ esp_err_t RotaryEncoderButton::init(gpio_num_t pin_a, gpio_num_t pin_b,
 
       rotary_encoder_event_t event = {0};
       if (xQueueReceive(me->event_queue, &event, portMAX_DELAY) == pdTRUE) {
-#ifdef TEST_ACE_INTERRUPT          
-        // 0xFFFF is (ab)used to signal a button event
-        if (event.state.position == 0xFFFF) {
-          if (me) {
-            me->button.check();
-          }
-        } else 
-#endif 
         {
           log_v(
               "Event: position %d, direction %s", event.state.position,
@@ -247,27 +238,7 @@ esp_err_t RotaryEncoderButton::init(gpio_num_t pin_a, gpio_num_t pin_b,
 
   // Don't enable button pin is GPIO_NUM_0
   // Create a task to call button.check ever 5 ms
-  if (pin_button != GPIO_NUM_0) {
-
-    pinMode(pin_button, INPUT_PULLUP);
-    pin_button_ = pin_button;
-    button.init(pin_button_);
-#ifdef TEST_ACE_INTERRUPT    
-    // Doesn't seem to work
-    attachInterruptArg(pin_button, isr_button_, this, CHANGE);    
-#else    
-    xTaskCreate([](void *this_ptr) {
-      while (1) {
-        auto me = (RotaryEncoderButton *)this_ptr;
-        if (me) {
-          me->button.check();
-        }
-        vTaskDelay(5 / portTICK_PERIOD_MS);
-      };
-    }, "buttons", 2000, this, 1, nullptr);
-#endif
-    button.getButtonConfig()->setIEventHandler(&handleEvent_);
-  }
+ 
   return ESP_OK;
 }
 
@@ -304,7 +275,6 @@ IRAM_ATTR void RotaryEncoderButton::isr_rotenc_(void *this_ptr) {
   rotary_encoder_info_t *info = &encoder->info;
   uint8_t event = process_(encoder);
   bool send_event = false;
-
   static auto lastevent = millis();
   int increment = 1;
 
