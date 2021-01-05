@@ -26,15 +26,6 @@
 
 #include <AceButton.h>
 
-#ifndef LONG_PRESS_DELAY
-#define LONG_PRESS_DELAY 1500
-#endif
-#ifndef LONG_PRESS_INTERVAL
-#define LONG_PRESS_INTERVAL 1500
-#endif
-#ifndef DOUBLE_KLICK_INTERVAL
-#define DOUBLE_KLICK_INTERVAL 400
-#endif
 
 using namespace app_utils;
 using namespace rotary_encoder;

@@ -27,6 +27,16 @@ Although STEP_VALUE is ignored for some function codes it must be defined for
 every button. Default is 10 for up and -10 for down
 
 ************************************************************/
+#ifndef LONG_PRESS_DELAY
+#define LONG_PRESS_DELAY 1500
+#endif
+#ifndef LONG_PRESS_INTERVAL
+#define LONG_PRESS_INTERVAL 1500
+#endif
+#ifndef DOUBLE_CLICK_INTERVAL
+#define DOUBLE_CLICK_INTERVAL 400
+#endif
+
 
 #if defined(ROTARY_BUTTON_PIN)
 static const uint8_t rotary_button_pin = ROTARY_BUTTON_PIN;
@@ -405,8 +415,8 @@ void setup_buttons() {
   single_cfg.setFeature(ButtonConfig::kFeatureDoubleClick);
   // single_cfg.setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
   single_cfg.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
-  single_cfg.setRepeatPressDelay(LONG_PRESS_DELAY / 2);
-  single_cfg.setRepeatPressInterval(LONG_PRESS_INTERVAL / 2);
+  single_cfg.setRepeatPressDelay(LONG_PRESS_DELAY );
+  single_cfg.setRepeatPressInterval(LONG_PRESS_INTERVAL );
   single_cfg.setDoubleClickDelay(DOUBLE_CLICK_INTERVAL);
 
   single_button_idx = button_idx;
@@ -491,8 +501,8 @@ void setup_buttons() {
       ButtonConfig::kFeatureSuppressAfterRepeatPress);
   resistor_button_config.setFeature(
       ButtonConfig::kFeatureSuppressAfterDoubleClick);
-  resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY / 2);
-  resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL / 2);
+  resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY );
+  resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL );
   resistor_button_config.setEventHandler(handle_button_event);
 
   b = &buttons[button_idx++];
@@ -550,7 +560,7 @@ void setup_buttons() {
 #endif
       vTaskDelay(5 / portTICK_PERIOD_MS);
     }
-  }, "acebuttoncheck", 2000, nullptr, 2, nullptr);
+  }, "acebuttoncheck", 4000, nullptr, 2, nullptr);
 #endif
 }
 
