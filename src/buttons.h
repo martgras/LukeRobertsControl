@@ -298,7 +298,7 @@ struct button_handler {
 
 button_handler buttons[10];
 
-button_func_t button_functions[6];
+button_func_t button_functions[7];
 
 #ifdef SWITCH_PIN
 // Every change of the switch toggles power
@@ -406,7 +406,6 @@ void setup_buttons() {
 
 #if defined(SINGLE_BUTTON_PIN)
   pinMode(SINGLE_BUTTON_PIN, INPUT_PULLUP);
-  log_i("SINGLE %d", SINGLE_BUTTON_PIN);
   static ace_button::AceButton single_button;
   static ace_button::ButtonConfig single_cfg;
 
@@ -569,7 +568,7 @@ void handle_button_event(AceButton *button, uint8_t eventType,
                          uint8_t buttonState) {
   auto pin = button->getPin();
   auto id = button->getId();
-  log_i("Button event PIN=%d, ID: %d event %d", pin, id, eventType);
+  log_d("Button event PIN=%d, ID: %d event %d", pin, id, eventType);
   if (pin == GPIO_NUM_0 && id == 0) {
     return;
   }
