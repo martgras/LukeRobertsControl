@@ -50,15 +50,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <functional>
-#include <AceButton.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
 
-namespace rotary_encoder {
 
-using namespace ace_button;
+#if !defined(ROTARY_DOUBLE_SPEED_INTERVAL)
+#define ROTARY_DOUBLE_SPEED_INTERVAL 60
+#endif
+
+#if !defined(ROTARY_QUAD_SPEED_INTERVAL)
+#define ROTARY_QUAD_SPEED_INTERVAL 30
+#endif
+
+namespace rotary_encoder {
 
 typedef int32_t rotary_encoder_position_t;
 
@@ -74,7 +81,7 @@ typedef enum {
 
 typedef enum {
   ROTARY_SPEEED_NORMAL =
-      1, ///< Direction not yet known (stationary since reset)
+      1, ///< Direction not yet known.
   ROTARY_SPEEED_FAST = 2,
   ROTARY_SPEEED_VERYFAST = 4,
 } rotary_encoder_speed_t;
@@ -128,15 +135,10 @@ typedef struct {
 class RotaryEncoderButton {
 
 public:
-  RotaryEncoderButton() : handleEvent_(this) {}
-  ~RotaryEncoderButton() {
-    uninit();
-    detachInterrupt(button.getPin());
-  }
+
 
   using rotary_handler_t = std::function<void(rotary_encoder_event_t event)>;
-  using button_handler_t =
-      std::function<void(uint8_t eventType, uint8_t buttonState)>;
+
 
   /**
    * @brief Initialise the rotary encoder device with the specified GPIO pins
@@ -149,7 +151,6 @@ public:
    * @return ESP_OK if successful, ESP_FAIL or ESP_ERR_* if an error occurred.
    */
   esp_err_t init(gpio_num_t pin_a, gpio_num_t pin_b,
-                 gpio_num_t pin_button = GPIO_NUM_0,
                  bool enable_halfsteps = false);
 
   /**
@@ -188,23 +189,14 @@ public:
     fast_interval_ = fast;
     veryfast_interval_ = veryfast_interval_;
   }
-
-  button_handler_t on_button_event;
   rotary_handler_t on_rotary_event;
-
-  ace_button::ButtonConfig *getButtonConfig() {
-    return button.getButtonConfig();
-  }
 
 private:
   static IRAM_ATTR uint8_t process_(RotaryEncoderButton *encoder);
   static IRAM_ATTR void isr_rotenc_(void *this_ptr);
-#ifdef TEST_ACE_INTERRUPT    
-  static IRAM_ATTR void isr_button_(void *this_ptr);
-#endif
 
-  uint8_t fast_interval_ = 60;
-  uint8_t veryfast_interval_ = 30;
+  uint8_t fast_interval_ = ROTARY_DOUBLE_SPEED_INTERVAL;
+  uint8_t veryfast_interval_ = ROTARY_QUAD_SPEED_INTERVAL;
 
   /**
    * @brief Create a queue handle suitable for use as an event queue.
@@ -228,40 +220,10 @@ private:
    * that will
    */
 
-  class ButtonHandler_ : public ace_button::IEventHandler {
-  public:
-    ButtonHandler_(RotaryEncoderButton *this_encoder)
-        : this_encoder_(this_encoder) {}
-    void handleEvent(ace_button::AceButton * /* button */, uint8_t eventType,
-                     uint8_t buttonState) override {
-
-      if (this_encoder_->on_button_event) {
-        this_encoder_->on_button_event(eventType, buttonState);
-      }
-      // Print out a message for all events.
-      ESP_LOGV("BUTTON", "handleEvent(): eventType: %d State %d", eventType,
-               buttonState);
-      // Control the LED only for the Pressed and Released events.
-      // Notice that if the MCU is rebooted while the button is pressed down, no
-      // event is triggered and the LED remains off.
-      switch (eventType) {
-      case ace_button::AceButton::kEventPressed:
-        //          digitalWrite(LED_PIN, LED_ON);
-        break;
-      case ace_button::AceButton::kEventReleased:
-        //          digitalWrite(LED_PIN, LED_OFF);
-        break;
-      }
-    }
-    RotaryEncoderButton *this_encoder_;
-  };
-
-  ButtonHandler_ handleEvent_;
+ 
 
   rotary_encoder_info_t info = {GPIO_NUM_0};
   QueueHandle_t event_queue;
-  gpio_num_t pin_button_;
-  ace_button::AceButton button;
   static portMUX_TYPE gpio_mux; //= portMUX_INITIALIZER_UNLOCKED ;
 };
 }
