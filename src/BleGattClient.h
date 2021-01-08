@@ -32,7 +32,7 @@ public:
   bool connected() { return client->isConnected(); }
 
   bool write(const uint8_t *data, size_t length) {
-    log_i("WritBLE");
+    log_i("WriteBLE");
     return characteristic->writeValue(const_cast<uint8_t *>(data), length,
                                       true);
   }

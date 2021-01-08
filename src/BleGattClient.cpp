@@ -140,7 +140,7 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     log_e("BLE Connect failed: characteristic not found.");
     return false ;
   }
-  log_d("Freeheap = %lu", ESP.getFreeHeap());
+  log_i("Freeheap = %lu", ESP.getFreeHeap());
   connected_ = true;
   if (on_complete != nullptr) {
     on_complete();
@@ -219,7 +219,10 @@ void BleGattClient::loop(on_complete_callback on_send) {
       }
       connecting = false;
     }
+    #if CORE_DEBUG_LEVEL > 3
     long start = millis();
+    #endif
+
     if (connected()) {
       if (send_queued()) {
         if (on_send) {

@@ -117,8 +117,8 @@ int set_dimmer_value(const String &value) {
   char *p;
   long numvalue = strtol(value.c_str(), &p, 10);
   auto brightness = lr.state().brightness;
-  if (*p) {
-    // p points to the char after the last digit. so if value is a number it
+  if (*p && *p != '.') {
+    // p points to the char after the last digit. so if the value is a number it
     // points to the terminating \0
 
     // is there another param e.g. "dimmer up 5"
@@ -174,7 +174,7 @@ int set_scene(const String &value) {
   auto scene = lr.state().scene;
   if (*p) {
     log_d("Scene %s", value.c_str());
-    // p points to the char after the last digit. so if value is a number it
+    // p points to the char after the last digit. so if the value is a number it
     // points to the terminating \0
 
     // is there another param e.g. "scene up 2"
@@ -242,7 +242,7 @@ int set_colortemperature(const String &value, bool use_kelvin = false) {
   long numvalue = strtol(value.c_str(), &p, 10);
   auto current_value = use_kelvin ? lr.state().kelvin : lr.state().mired;
   if (*p && *p != '.') {
-    // p points to the char after the last digit. so if value is a number it
+    // p points to the char after the last digit. so if the value is a number it
     // points to the terminating \0
 
     // is there another param e.g. "dimmer up 5"
@@ -414,33 +414,48 @@ bool set_downlight(const char *json) {
     }
 #endif
   }
-  if (!get_jsonvalue(json, "duration", duration)) {
-    success = get_jsonvalue(json, "d", duration);
-  }
 
-  success = get_jsonvalue(json, "kelvin", kelvin);
+  bool have_brightness = true;
+  success = get_jsonvalue(json, "brightness", brightness);
   if (!success) {
-    success = get_jsonvalue(json, "k", kelvin);
+    success = get_jsonvalue(json, "b", brightness);
     if (!success) {
-      success = get_jsonvalue(json, "ct", kelvin);
-      if (success) {
-        kelvin = lr.switch_kelvin_mired(kelvin);
-      }
+      success = get_jsonvalue(json, "dimmer", brightness);
+      brightness = brightness * 255 / 100;
+    } else {
+      have_brightness = false;
     }
   }
+
+  bool have_ct = true;
   if (success) {
-    success = get_jsonvalue(json, "brightness", brightness);
+    if (!get_jsonvalue(json, "duration", duration)) {
+      duration = 0;
+    }
+    success = get_jsonvalue(json, "kelvin", kelvin);
     if (!success) {
-      success = get_jsonvalue(json, "b", brightness);
+      success = get_jsonvalue(json, "k", kelvin);
       if (!success) {
-        success = get_jsonvalue(json, "dimmer", brightness);
-        brightness = brightness * 255 / 100;
+        success = get_jsonvalue(json, "ct", kelvin);
+        if (success) {
+          kelvin = lr.switch_kelvin_mired(kelvin);
+        } else {
+          have_ct = false;
+        }
       }
     }
   }
   if (success) {
     lr.set_intermmediate_downlight(duration, kelvin, brightness);
+  } else {
+    if (have_brightness) {
+      lr.set_dimmer(brightness * 100 / 255, true);
+    }
+    if (have_ct) {
+      lr.set_colortemperature_kelvin(kelvin, true);
+    }
   }
+
   return success;
 }
 
@@ -505,7 +520,10 @@ bool parse_command(String cmd, String value) {
   } else if (cmd.equals("result") || cmd.equals("mqttping")) {
     last_mqttping = millis();
     log_d("got mqtt ping");
-    mqtt.queue("tele/" HOSTNAME "/state",lr.create_state_message(app.ota_started() ? "waiting for ota start on port 3232" : nullptr));
+    mqtt.queue("tele/" HOSTNAME "/state",
+               lr.create_state_message(
+                   app.ota_started() ? "waiting for ota start on port 3232"
+                                     : nullptr));
     return true;
   } else if (cmd.equals("reboot") || cmd.equals("restart")) {
     log_i("------- REBOOT -------");
