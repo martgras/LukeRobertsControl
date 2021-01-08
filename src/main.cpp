@@ -27,6 +27,9 @@
 #define ROTARY_STEP_VALUE 5
 #endif
 #endif
+#endif
+
+#include <AceButton.h>
 
 #include <AceButton.h>
 
