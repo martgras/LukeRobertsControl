@@ -18,24 +18,22 @@
 #include "webpages.h"
 
 #if defined(ROTARY_PIN_A)
-#if !defined(ROTARY_PIN_B)
-#error "ROTARY configuration error - PIN A and B must be defined"
-#endif
-#include "rotaryencoder.h"
+  #if !defined(ROTARY_PIN_B)
+  #error "ROTARY configuration error - PIN A and B must be defined"
+  #endif
+  #include "rotaryencoder.h"
 
-#if !defined(ROTARY_STEP_VALUE)
-#define ROTARY_STEP_VALUE 5
+  #if !defined(ROTARY_STEP_VALUE)
+  #define ROTARY_STEP_VALUE 5
+  #endif
 #endif
-#endif
-#endif
-
-#include <AceButton.h>
 
 #include <AceButton.h>
 
 using namespace app_utils;
 #if defined( ROTARY_PIN_A)
 using namespace rotary_encoder;
+#endif
 using namespace ace_button;
 WiFiClient network_client;
 AppUtils app;
