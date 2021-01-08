@@ -236,7 +236,7 @@ esp_err_t RotaryEncoderButton::init(gpio_num_t pin_a, gpio_num_t pin_b,
 
   }, "rotary", 2000, this, 1, nullptr);
 
-  // Don't enable button pin is GPIO_NUM_0
+  // Don't enable if button pin is GPIO_NUM_0
   // Create a task to call button.check ever 5 ms
  
   return ESP_OK;

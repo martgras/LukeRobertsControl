@@ -23,6 +23,9 @@ build_flags = -DWIFISID='"mywifi"'
 ## Define hardware otpions
             -DROTARY_PIN_A=GPIO_NUM_26                   ## pin A (CLK) of the rotary (Fire Beetle D3)
             -DROTARY_PIN_B=GPIO_NUM_27                   ## pin B (DT) of the rotary (Fire Beetle D4)
+;            -DROTARY_STEP_VALUE=5                       ## value change for every event. Default is 5
+;            -DROTARY_DOUBLE_SPEED_INTERVAL=60           ## if less than 60 ms between 2 events double ROTARY_STEP_VALUE
+;            -DROTARY_QUAD_SPEED_INTERVAL=30             ## if less than 30 ms between 2 events use 4 * ROTARY_STEP_VALUE
             -DROTARY_BUTTON_PIN=GPIO_NUM_25              ## input pin of the rotary switch (SW) (Fire Beetle D2)
 ;            -DROTARY_BUTTON_PIN_CLICK_ACTION=kPowerToggle ## Modifiy the function attached to the action
 ;            -DROTARY_BUTTON_PIN_LONG_PRESS_ACTION=kNoop

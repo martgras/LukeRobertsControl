@@ -56,6 +56,15 @@
 #include "esp_err.h"
 #include "driver/gpio.h"
 
+
+#if !defined(ROTARY_DOUBLE_SPEED_INTERVAL)
+#define ROTARY_DOUBLE_SPEED_INTERVAL 60
+#endif
+
+#if !defined(ROTARY_QUAD_SPEED_INTERVAL)
+#define ROTARY_QUAD_SPEED_INTERVAL 30
+#endif
+
 namespace rotary_encoder {
 
 typedef int32_t rotary_encoder_position_t;
@@ -72,7 +81,7 @@ typedef enum {
 
 typedef enum {
   ROTARY_SPEEED_NORMAL =
-      1, ///< Direction not yet known (stationary since reset)
+      1, ///< Direction not yet known.
   ROTARY_SPEEED_FAST = 2,
   ROTARY_SPEEED_VERYFAST = 4,
 } rotary_encoder_speed_t;
@@ -186,8 +195,8 @@ private:
   static IRAM_ATTR uint8_t process_(RotaryEncoderButton *encoder);
   static IRAM_ATTR void isr_rotenc_(void *this_ptr);
 
-  uint8_t fast_interval_ = 60;
-  uint8_t veryfast_interval_ = 30;
+  uint8_t fast_interval_ = ROTARY_DOUBLE_SPEED_INTERVAL;
+  uint8_t veryfast_interval_ = ROTARY_QUAD_SPEED_INTERVAL;
 
   /**
    * @brief Create a queue handle suitable for use as an event queue.

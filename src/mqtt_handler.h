@@ -272,16 +272,16 @@ private:
 
       if (client != nullptr) {
         if (client->connected() && connection_state_ == MQTT_CLIENT_CONNECTED) {
-          // reset reconnect counter after a minute
           while (!mqtt_messages.empty()) {
             auto item = mqtt_messages.front();
             char topic[kMaxTopicSize], msg[kMaxMessageSize];
             strcpy(topic, item.topic);
             strcpy(msg, item.message);
-            log_v(" Pub: %s %s %d", topic, msg, item.retained);
-            client->publish(topic, 0, item.retained, msg);
-            vTaskDelay(1);
-            mqtt_messages.pop();
+            log_d("Publish: %s %s %d", topic, msg, item.retained);
+            if (client->publish(topic, 0, item.retained, msg)) {
+              vTaskDelay(1);
+              mqtt_messages.pop();
+            }
             delay(100);
           }
 

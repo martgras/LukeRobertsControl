@@ -37,7 +37,6 @@ every button. Default is 10 for up and -10 for down
 #define DOUBLE_CLICK_INTERVAL 400
 #endif
 
-
 #if defined(ROTARY_BUTTON_PIN)
 static const uint8_t rotary_button_pin = ROTARY_BUTTON_PIN;
 
@@ -190,14 +189,16 @@ static const button_function_codes resistor_switch_click_action =
 
 static const button_function_codes resistor_switch_double_click_action =
 #if defined(RESISTOR_BUTTON_SWITCH_DOUBLE_CLICK_ACTION)
-    static_cast<button_function_codes>(RESISTOR_BUTTON_SWITCH_DOUBLE_CLICK_ACTION);
+    static_cast<button_function_codes>(
+        RESISTOR_BUTTON_SWITCH_DOUBLE_CLICK_ACTION);
 #else
     kNoop;
 #endif // if defined(RESISTOR_BUTTON_SWITCH_DOUBLE_CLICK_ACTION)
 
 static const button_function_codes resistor_switch_long_press_action =
 #if defined(RESISTOR_BUTTON_SWITCH_LONG_PRESS_ACTION)
-    static_cast<button_function_codes>(RESISTOR_BUTTON_SWITCH_LONG_PRESS_ACTION);
+    static_cast<button_function_codes>(
+        RESISTOR_BUTTON_SWITCH_LONG_PRESS_ACTION);
 #else
     kNextScene;
 #endif // if defined(RESISTOR_BUTTON_SWITCH_LONG_PRESS_ACTION)
@@ -258,7 +259,8 @@ static const button_function_codes resistor_down_click_action =
 
 static const button_function_codes resistor_down_double_click_action =
 #if defined(RESISTOR_BUTTON_DOWN_DOUBLE_CLICK_ACTION)
-    static_cast<button_function_codes>(RESISTOR_BUTTON_DOWN_DOUBLE_CLICK_ACTION);
+    static_cast<button_function_codes>(
+        RESISTOR_BUTTON_DOWN_DOUBLE_CLICK_ACTION);
 #else
     kNoop;
 #endif
@@ -414,8 +416,8 @@ void setup_buttons() {
   single_cfg.setFeature(ButtonConfig::kFeatureDoubleClick);
   // single_cfg.setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
   single_cfg.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
-  single_cfg.setRepeatPressDelay(LONG_PRESS_DELAY );
-  single_cfg.setRepeatPressInterval(LONG_PRESS_INTERVAL );
+  single_cfg.setRepeatPressDelay(LONG_PRESS_DELAY);
+  single_cfg.setRepeatPressInterval(LONG_PRESS_INTERVAL);
   single_cfg.setDoubleClickDelay(DOUBLE_CLICK_INTERVAL);
 
   single_button_idx = button_idx;
@@ -472,17 +474,18 @@ void setup_buttons() {
 #define RESISTOR_BUTTON_DOWN_VPIN 1
 
   static AceButton resistor_up((uint8_t)RESISTOR_BUTTON_UP_VPIN, HIGH,
-                             RESISTOR_BUTTON_UP_VPIN | 0x80);
-  static AceButton resistor_down(RESISTOR_BUTTON_DOWN_VPIN, HIGH, RESISTOR_BUTTON_DOWN_VPIN | 0x80);
+                               RESISTOR_BUTTON_UP_VPIN | 0x80);
+  static AceButton resistor_down(RESISTOR_BUTTON_DOWN_VPIN, HIGH,
+                                 RESISTOR_BUTTON_DOWN_VPIN | 0x80);
 #ifdef RESISTOR_BUTTON_SWITCH
 #define RESISTOR_BUTTON_SWITCH_VPIN 2
   static AceButton resistor_sw(RESISTOR_BUTTON_SWITCH_VPIN, HIGH,
-                             RESISTOR_BUTTON_SWITCH_VPIN | 0x80);
+                               RESISTOR_BUTTON_SWITCH_VPIN | 0x80);
 #endif
   static AceButton *const resistor_buttons[] = {&resistor_up, &resistor_down
 #ifdef RESISTOR_BUTTON_SWITCH
-                                              ,
-                                              &resistor_sw
+                                                ,
+                                                &resistor_sw
 #endif
   };
   static const uint16_t levels[] = {RESISTOR_BUTTON_UP, RESISTOR_BUTTON_DOWN,
@@ -500,8 +503,8 @@ void setup_buttons() {
       ButtonConfig::kFeatureSuppressAfterRepeatPress);
   resistor_button_config.setFeature(
       ButtonConfig::kFeatureSuppressAfterDoubleClick);
-  resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY );
-  resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL );
+  resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY);
+  resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL);
   resistor_button_config.setEventHandler(handle_button_event);
 
   b = &buttons[button_idx++];

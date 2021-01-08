@@ -22,10 +22,13 @@
 #error "ROTARY configuration error - PIN A and B must be defined"
 #endif
 #include "rotaryencoder.h"
+
+#if !defined(ROTARY_STEP_VALUE)
+  #define ROTARY_STEP_VALUE 5
+#endif
 #endif
 
 #include <AceButton.h>
-
 
 using namespace app_utils;
 using namespace rotary_encoder;
@@ -633,7 +636,6 @@ void setup() {
   }
 
   app.on_network_connect = mqtt.mqtt_reconnect;
-
   mqtt.queue("tele/" HOSTNAME "/LWT", "Online", true);
 
   bool result;
@@ -674,7 +676,7 @@ void setup() {
     log_v("Rotary event %d  %d (%d) %ld ", event.state.direction,
           event.state.position, event.state.speed);
     int dimmerlevel = get_dimmer_value();
-    int step = 5;
+    int step = ROTARY_STEP_VALUE;
     if (event.state.direction == ROTARY_ENCODER_DIRECTION_CLOCKWISE) {
       step *= event.state.speed;
     } else if (event.state.direction ==
@@ -703,7 +705,7 @@ void setup() {
 void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();
-  // mqtt.loop();
+  mqtt.loop();
   lr.client().loop([&]() {
     // mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
   });
