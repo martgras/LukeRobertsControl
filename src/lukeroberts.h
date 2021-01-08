@@ -135,6 +135,7 @@ public:
                          this->create_state_message(), true, default_qos);
           return true;
         });
+    gatt_client_.start_ble_loop();
   }
 
   uint8_t set_dimmer(unsigned int new_dim_level, bool force_dirty = false) {
@@ -337,22 +338,29 @@ public:
     gatt_client_.queue_cmd(custom);
   }
 
-  const char *create_state_message() {
+  const char *
+  create_state_message(const char *additional_information = nullptr) {
     static char statemsg[512];
     time_t now = time(0);
 
     // Convert now to tm struct for local timezone
     tm *t = localtime(&now);
 
-    snprintf(statemsg, sizeof(statemsg),
-             "{\"Time\":"
-             "\"%04d-%02d-%02dT%02d:%02d:%02d\","
-             "\"Heap\":%u,\"IPAddress\":\"%s\",\"POWER\":\"%s\",\"CT\":"
-             "%d,\"KELVIN\":%d,\"DIMMER\":%d,\"SCENE\":%d}",
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour,
-             t->tm_min, t->tm_sec, ESP.getFreeHeap() / 1024,
-             WiFi.localIP().toString().c_str(), state_.power ? "ON" : "OFF",
-             state_.mired, state_.kelvin, state_.brightness, state_.scene);
+    snprintf(
+        statemsg, sizeof(statemsg),
+        additional_information
+            ? "{\"Time\":"
+              "\"%04d-%02d-%02dT%02d:%02d:%02d\","
+              "\"Heap\":%u,\"IPAddress\":\"%s\",\"POWER\":\"%s\",\"CT\":"
+              "%d,\"KELVIN\":%d,\"DIMMER\":%d,\"SCENE\":%d, \"INFO\":\"%s\" }"
+            : "{\"Time\":"
+              "\"%04d-%02d-%02dT%02d:%02d:%02d\","
+              "\"Heap\":%u,\"IPAddress\":\"%s\",\"POWER\":\"%s\",\"CT\":"
+              "%d,\"KELVIN\":%d,\"DIMMER\":%d,\"SCENE\":%d}",
+        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min,
+        t->tm_sec, ESP.getFreeHeap() / 1024, WiFi.localIP().toString().c_str(),
+        state_.power ? "ON" : "OFF", state_.mired, state_.kelvin,
+        state_.brightness, state_.scene, additional_information);
     return statemsg;
   }
 
@@ -453,7 +461,6 @@ public:
       }
 #endif
     }
-  
   }
 
   static uint8_t get_current_scene(BleGattClient &client) {

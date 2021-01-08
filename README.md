@@ -75,6 +75,7 @@ Example :
 -DBUTTON_UP_PIN=GPIO_NUM_17
 ````
 
+##### Two Button mode
 If you have only 2 buttons you can redefine the default actions to turn on power when clicking button 1 and of with button 2. A long press on a buttons dims up or down.
 
 Example :
@@ -203,7 +204,15 @@ DOUBLE_KLICK_INTERVAL maximum time between 2 clicks to define them as a double-c
 ### Use a Relay
 
 By default, the lamp is turned off by setting the scene to 0.
-If you prefer a “real” power off connect a relay to a GPIO PIN and define RELAY_PIN.
+If you prefer a “real” power off a relay can be connnected to a GPIO PIN. The power command will then control the relay.
+
+
+Example:
+
+````
+-DRELAY_PIN=5
+````
+
 
 All settings can be combined if different GPIO’s are used.
 

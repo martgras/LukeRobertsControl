@@ -27,6 +27,8 @@ public:
     return tmp;
   }
 
+  void start_ble_loop();
+
   bool connected() { return client->isConnected(); }
 
   bool write(const uint8_t *data, size_t length) {

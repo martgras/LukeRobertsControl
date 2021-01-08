@@ -24,7 +24,7 @@
 #include "rotaryencoder.h"
 
 #if !defined(ROTARY_STEP_VALUE)
-  #define ROTARY_STEP_VALUE 5
+#define ROTARY_STEP_VALUE 5
 #endif
 #endif
 
@@ -505,6 +505,7 @@ bool parse_command(String cmd, String value) {
   } else if (cmd.equals("result") || cmd.equals("mqttping")) {
     last_mqttping = millis();
     log_d("got mqtt ping");
+    mqtt.queue("tele/" HOSTNAME "/state",lr.create_state_message(app.ota_started() ? "waiting for ota start on port 3232" : nullptr));
     return true;
   } else if (cmd.equals("reboot") || cmd.equals("restart")) {
     log_i("------- REBOOT -------");
@@ -535,6 +536,9 @@ String processor(const String &var) {
     return lr.state().power ? "An" : "Aus";
   }
 
+  if (var == "POWER") {
+    return lr.state().power ? "On" : "Off";
+  }
   if (var == "SCENES") {
 
     String scene_html = "<br><select id=\"sceneselect\" name=\"scenes\" "
@@ -567,7 +571,17 @@ RotaryEncoderButton rotary;
 // the button code was moved out because it is pretty repeptive, simple but long
 #include "buttons.h"
 
+#include <esp_panic.h>
+
 void setup() {
+
+/* Used to help narrowing down a heap corruption */
+/*
+xTaskCreatePinnedToCore( [](void*){
+  esp_set_watchpoint(0, (void *)0xfffba5c4, 4, ESP_WATCHPOINT_STORE);
+  vTaskDelete(0);
+},"wp",4096,nullptr,1,nullptr,1);
+*/
 
 //  esp_wifi_stop();
 #ifdef USE_ETHERNET
@@ -611,7 +625,10 @@ void setup() {
         parse_command(message.substring(0, position_space),
                       message.substring(position_space + 1));
       }
-      request->send(200, "application/json", lr.create_state_message());
+      request->send(200, "application/json",
+                    lr.create_state_message(
+                        app.ota_started() ? "waiting for ota start on port 3232"
+                                          : nullptr));
     } else {
       message = "Not a valid command message sent";
       request->send(400, "text/plain", "GET: " + message);
@@ -635,7 +652,7 @@ void setup() {
     }
   }
 
-  app.on_network_connect = mqtt.mqtt_reconnect;
+  app.on_network_connect = std::bind(&MqttPublish::mqtt_reconnect, &mqtt);
   mqtt.queue("tele/" HOSTNAME "/LWT", "Online", true);
 
   bool result;
@@ -706,10 +723,12 @@ void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();
   mqtt.loop();
-  lr.client().loop([&]() {
-    // mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
-  });
-
+  /*
+    lr.client().loop([&]() {
+      // mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(),
+    true);
+    });
+  */
   if (millis() - last_statemsg > 60000) {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
     //   mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);
@@ -721,31 +740,6 @@ void loop() {
       log_e("POSSIBLE MEMORY LEAK detected. Free heap is %d k.  Rebooting",
             ESP.getFreeHeap() / 1024);
       app.fast_restart();
-    }
-  }
-  // restablish mqtt after 10 mins without an incoming ping
-  if (0 && millis() - last_mqttping > 1000 * 70) {
-    log_e("missing mqtt ping. trying to reconnect");
-
-    app.stop_network();
-    mqtt.disconnect();
-    delay(100);
-
-    // unclear why reconnecting doesn't always work reliably - just reboot
-    app.fast_restart();
-
-    app.start_network();
-    last_mqttping = millis();
-    uint8_t mqtt_reconnects = 0;
-    while (!mqtt.connected()) {
-      if (!mqtt.mqtt_reconnect()) {
-        delay(500);
-        if (!mqtt.mqtt_reconnect() && mqtt_reconnects++ > 10) {
-          log_e("mqtt retry count exceeded - rebooting");
-          delay(100);
-          app.fast_restart();
-        }
-      }
     }
   }
 }

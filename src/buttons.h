@@ -8,7 +8,8 @@ enum button_function_codes {
   kPowerToggle,
   kChangeBrightness,
   kChangeColorTemperature,
-  kNextScene
+  kNextScene,
+  MAX__ // don't use must be last member of enum
 };
 
 /*******  Map the button definitions or set defaults  *****
@@ -294,13 +295,11 @@ using button_func_t = std::function<void(int value)>;
 struct button_handler {
   uint8_t id;
   int8_t step_value;
-  button_func_t event_handlers[7] = {nullptr, nullptr, nullptr, nullptr,
-                                     nullptr, nullptr, nullptr};
+  button_func_t event_handlers[button_function_codes::MAX__] = {};
 };
 
-button_handler buttons[10];
-
-button_func_t button_functions[7];
+button_handler buttons[8];
+button_func_t button_functions[button_function_codes::MAX__];
 
 #ifdef SWITCH_PIN
 // Every change of the switch toggles power

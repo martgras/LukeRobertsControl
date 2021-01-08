@@ -82,9 +82,16 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     }
   }
 
+   auto rssi = client->getRssi();
   log_i("Connected to: %s", client->getPeerAddress().toString().c_str());
-  log_i("RSSI: %d", client->getRssi());
-
+  log_i("RSSI: %d",rssi);
+  if (rssi == 0) {
+      NimBLEDevice::deleteClient(client);
+      log_e("BLE Connect %s", "Failed to connect rssi = 0, deleted client");
+      client = nullptr;
+      connected_ = false;
+      return false ; 
+  }
   /** Now we can read/write/subscribe the charateristics of the services we
    * are
    * interested in */
@@ -92,6 +99,9 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
   service = client->getService(serviceUUID);
   if (service) { /** make sure it's not null */
     characteristic = service->getCharacteristic(charUUID);
+  } else {
+    log_e("BLE Connect failed: service not found.");    
+    return false ;
   }
 
   if (characteristic) { /** make sure it's not null */
@@ -127,7 +137,8 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
       }
     }
   } else {
-    log_e("BLE Connect %s", "service not found.");
+    log_e("BLE Connect failed: characteristic not found.");
+    return false ;
   }
   log_d("Freeheap = %lu", ESP.getFreeHeap());
   connected_ = true;
@@ -218,6 +229,25 @@ void BleGattClient::loop(on_complete_callback on_send) {
       log_d("Command sent in %ld ms", millis() - start);
     }
   }
+}
+
+static void ble_loop_(void *this_ptr) {
+    auto *this_ = static_cast<BleGattClient *>(this_ptr);
+      if (this_ != nullptr) {
+        this_->loop();
+      }
+}
+
+void BleGattClient::start_ble_loop()
+{
+    xTaskCreatePinnedToCore([](void* this_ptr){
+      while(1) {
+      ble_loop_(this_ptr);
+      vTaskDelay(50 / portTICK_PERIOD_MS);
+      }
+    }, "blesend", 8192, this, 1,
+                            nullptr,1);
+
 }
 
 /*
