@@ -15,19 +15,21 @@
 #include "webpages.h"
 #include "mqtt_handler.h"
 
-#ifdef ROTARY
-#include "rotaryencoder.h"
-
 #ifndef LONG_PRESS_DELAY
 #define LONG_PRESS_DELAY 1500
 #endif
 #ifndef LONG_PRESS_INTERVAL
 #define LONG_PRESS_INTERVAL 1500
 #endif
+
+#if defined( ROTARY_PIN_A)
+#include "rotaryencoder.h"
 #endif
 
 using namespace app_utils;
+#if defined( ROTARY_PIN_A)
 using namespace rotary_encoder;
+#endif
 
 ///#define RELAY_PIN GPIO_NUM_13
 WiFiClient network_client;
@@ -859,7 +861,7 @@ String processor(const String &var) {
 }
 
 static const char *PARAM_CMD = "cmnd";
-#ifdef ROTARY
+#if defined( ROTARY_PIN_A)
 RotaryEncoderButton rotary;
 #endif
 
@@ -962,9 +964,9 @@ void setup() {
     // BLE response
   }
 
-#ifdef ROTARY
+#if defined( ROTARY_PIN_A)
   ESP_ERROR_CHECK(
-      rotary.init(ROTARY_PIN_A, ROTARY_PIN_B, ROTARY_PIN_BUTTON, false));
+      rotary.init(ROTARY_PIN_A, ROTARY_PIN_B, ROTARY_BUTTON_PIN, false));
   auto buttonConfig = rotary.getButtonConfig();
 
   rotary.set_speedup_times(50, 25);
