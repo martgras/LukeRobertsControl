@@ -46,7 +46,7 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     });
     client_cb_.set_on_disconnect(*this, [&]() {
       this->connected_ = false;
-      log_d("BLE DISCONNECT ");
+      log_d("BLE DISCONNECT");
     });
     /** Set initial connection parameters: These settings are 15ms interval, 0
      * latency, 120ms timout.

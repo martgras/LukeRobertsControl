@@ -57,13 +57,13 @@ public:
   }
 
   struct BleCommand {
-    uint8_t data[16];
+    uint8_t data[32];
     size_t size;
     bool is_dirty;
     std::function<void(int)> on_send;
   };
 
-  static const int CACHE_SIZE_ = 4;
+  static const int CACHE_SIZE_ = 6;
   // std::vector<BleData> cached_commands;
   std::array<BleCommand, CACHE_SIZE_> cached_commands;
   std::queue<BleCommand> pending_commands;

@@ -233,9 +233,9 @@ All settings can be combined if different GPIO’s are used.
     -DSINGLE_BUTTON_PIN=GPIO_NUM_19
     # Voltage divider button
     -DRESISTOR_BUTTON_PIN=35
-    -DRESISTOR_BUTTON_UP=1000
-    -DRESISTOR_BUTTON_DOWN=1700
-    -DRESISTOR_BUTTON_SWITCH=3000
+    -DRESISTOR_BUTTON_UP=970
+    -DRESISTOR_BUTTON_DOWN=1840
+    -DRESISTOR_BUTTON_SWITCH=3220
     # Relay
     -DRELAY_PIN=GPIO_NUM_32
     # timings

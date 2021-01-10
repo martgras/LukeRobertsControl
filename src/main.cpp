@@ -31,7 +31,7 @@
 #include <AceButton.h>
 
 using namespace app_utils;
-#if defined( ROTARY_PIN_A)
+#if defined(ROTARY_PIN_A)
 using namespace rotary_encoder;
 #endif
 using namespace ace_button;
@@ -51,7 +51,7 @@ extern uint8_t max_scenes;
 
 MqttPublish mqtt;
 
-// provide a lamdba to call the used mqtt client (decouples mqtt library used)
+// provide a lamdba to call the mqtt client (decouples mqtt library used)
 RTC_DATA_ATTR LR_Ble_Device lr([](const char *topic, const char *data,
                                   bool retained, uint8_t qos) {
   mqtt.queue(topic, data, retained, qos);
@@ -517,15 +517,15 @@ bool parse_command(String cmd, String value) {
 #endif
   } else if (cmd.equals("ota")) {
     AppUtils::setupOta();
-    mqtt.queue("tele/" HOSTNAME "/ota", "waiting for ota start on port 3232");
+    mqtt.queue("tele/" HOSTNAME "/ota", "ota waiting.Listening on port 3232");
     return true;
   } else if (cmd.equals("result") || cmd.equals("mqttping")) {
     last_mqttping = millis();
     log_d("got mqtt ping");
     mqtt.queue("tele/" HOSTNAME "/state",
-               lr.create_state_message(
-                   app.ota_started() ? "waiting for ota start on port 3232"
-                                     : nullptr));
+               lr.create_state_message(app.ota_started()
+                                           ? "{\"ota\":true,\"state\":\"waiting\",\"port\":3232}"
+                                           : nullptr));
     return true;
   } else if (cmd.equals("reboot") || cmd.equals("restart")) {
     log_i("------- REBOOT -------");
@@ -645,10 +645,10 @@ xTaskCreatePinnedToCore( [](void*){
         parse_command(message.substring(0, position_space),
                       message.substring(position_space + 1));
       }
-      request->send(200, "application/json",
-                    lr.create_state_message(
-                        app.ota_started() ? "waiting for ota start on port 3232"
-                                          : nullptr));
+      request->send(
+          200, "application/json",
+          lr.create_state_message(
+              app.ota_started() ? "{\"ota\":true ,\"port\":3232}" : nullptr));
     } else {
       message = "Not a valid command message sent";
       request->send(400, "text/plain", "GET: " + message);
@@ -743,12 +743,6 @@ void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();
   mqtt.loop();
-  /*
-    lr.client().loop([&]() {
-      // mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(),
-    true);
-    });
-  */
   if (millis() - last_statemsg > 60000) {
     mqtt.queue("stat/" HOSTNAME "/RESULT", lr.create_state_message(), true);
     //   mqtt.queue("cmnd/" HOSTNAME "/mqttping", "ping", false);

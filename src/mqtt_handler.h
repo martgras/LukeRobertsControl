@@ -2,6 +2,7 @@
 #define __MQTT_HANDLERH__
 
 #define HA_ID HOSTNAME "_device"
+const int kConnectThreadIndex = 0;
 
 #include <AsyncMqttClient.h>
 
@@ -109,7 +110,12 @@ public:
     if (mqtt_client) {
       delete mqtt_client;
     }
+    if (mutex_) {
+      vSemaphoreDelete(mutex_);
+      mutex_ = nullptr;
+    }
   }
+  static SemaphoreHandle_t connect_mux_;
 
   void recreate_client() {
     /*
@@ -140,31 +146,43 @@ public:
                                  size_t length, size_t index, size_t total) {
         mqtt_callback(topic, payload, properties, length, index, total);
       });
+
+      if (connect_mux_ == nullptr) {
+        connect_mux_ = xSemaphoreCreateBinary();
+      }
     }
+
     mqtt_client->onConnect(
         [&](bool has_session) { on_mqtt_connect(has_session); });
     mqtt_client->onDisconnect([&](AsyncMqttClientDisconnectReason reason) {
       on_mqtt_disconnect(reason);
+
     });
-    // mqtt_reconnect_timer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000),
-    // pdFALSE, (void*)0,
-    // reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+
+    xSemaphoreGive(connect_mux_);
   }
 
+  static int timeouts;
   void start() {
     pending_data = false;
+
     mutex_ = xSemaphoreCreateMutex();
-    /*
-    xTaskCreate(send_pump, "mqttsend", 8192, (void *)&mqtt_client, 1,
-                &pump_task_);
-    */
+    mqtt_client->onPublish([](uint16_t id) { log_d("Packet %d ack %d", id); });
+    xTaskCreatePinnedToCore([](void *this_ptr) {
+      while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        reinterpret_cast<MqttPublish *>(this_ptr)->mqtt_reconnect();
+      }
+    }, "mqtt_connect", 2048, this, 2, &connect_task_, 1);
+
+    xTaskCreatePinnedToCore(send_pump, "mqttsend", 8192, (void *)this, 1,
+                            &pump_task_, 1);
   }
 
   void queue(const char *topic, const char *message, bool retained = false,
              uint8_t qos = 0) {
     mqtt_messages.emplace(topic, message, retained, qos);
     xSemaphoreGive(mutex_);
-    // xTaskNotifyGive (pump_task_);
   }
 
   bool connected() { return mqtt_client->connected(); }
@@ -193,19 +211,37 @@ public:
     if (MQTTUSER != nullptr) {
       mqtt_client->setCredentials(MQTTUSER, MQTTPASSWORD);
     }
-    mqtt_client->connect();
-    connection_state_ = MQTT_CLIENT_CONNECTING;
-    auto start_time = millis();
-    while (connection_state_ != MQTT_CLIENT_CONNECTED) {
-      delay(50);
-      if (millis() - start_time > 30000) {
-        esp_sleep_enable_timer_wakeup(10);
-        delay(100);
-        esp_deep_sleep_start();
+    log_v("waiting for semaphore ...");
+    // Wait 35 seconds
+    if (xSemaphoreTake(connect_mux_, 35 * 1000 / portTICK_PERIOD_MS)) {
+      task_to_notify_ = xTaskGetCurrentTaskHandle();
+      mqtt_client->connect();
+      connection_state_ = MQTT_CLIENT_CONNECTING;
+      // Wait for on_connect to signal us when connection is complete
+      auto n = ulTaskNotifyTake(pdFALSE, 20 * 1000 / portTICK_PERIOD_MS);
+      if (n == 1) {
+        timeouts = 0;
+      } else {
+        // timeout restart after 5 in a row
+        log_w("mqtt connecting timed out");
+        if (timeouts++ > 5) {
+          esp_sleep_enable_timer_wakeup(10);
+          delay(100);
+          esp_deep_sleep_start();
+        } else {
+          vTaskDelay(10);
+          // retry connect
+          xTaskNotifyGive(connect_task_);
+        }
       }
+      task_to_notify_ = nullptr;
+      xSemaphoreGive(connect_mux_);
+      return true;
+    } else {
+      // timeout waiting for semaphore
+      log_e("Timeout waiting for connect semaphore");
+      return false;
     }
-    // return mqtt_client->connected();
-    return true;
   }
 
   static void loop() {
@@ -242,24 +278,15 @@ private:
          WiFi.localIP().toString() + ("\"}"))
             .c_str());
     connection_state_ = MQTT_CLIENT_CONNECTED;
-    xTaskCreatePinnedToCore(send_pump, "mqttsend", 8192, (void *)this, 1,
-                            &pump_task_, 1);
+    xTaskNotifyGive(task_to_notify_);
   }
 
   void on_mqtt_disconnect(AsyncMqttClientDisconnectReason reason) {
-
     connection_state_ = MQTT_CLIENT_DISCONNECTED;
     log_w("Mqtt was disconnected %d", reason);
-    vTaskDelete(pump_task_);
-    vSemaphoreDelete(mutex_);
-
     recreate_client();
     delay(100);
-    mutex_ = xSemaphoreCreateMutex();
-    xTaskCreatePinnedToCore([](void *this_ptr) {
-      reinterpret_cast<MqttPublish *>(this_ptr)->mqtt_reconnect();
-      vTaskDelete(nullptr);
-    }, "mqtt_connect", 4096, this, 2, nullptr, 1);
+    xTaskNotifyGive(connect_task_);
   }
 
   void mqtt_callback(char *topic, char *payload,
@@ -301,11 +328,11 @@ private:
 
       if (connected() && connection_state_ == MQTT_CLIENT_CONNECTED) {
         while (!mqtt_messages.empty()) {
-          mqtt_msg &item = mqtt_messages.front();
+          mqtt_msg item = mqtt_messages.front();
           log_d("Publish: %s %s %d", item.topic, item.message, item.retained);
           if (mqtt_client->publish(item.topic, 0, item.retained,
                                    item.message)) {
-            vTaskDelay(10);
+            vTaskDelay(50);
             mqtt_messages.pop();
             log_d("mqtt publish complete");
           } else {
@@ -317,9 +344,9 @@ private:
           //      mqtt_reconnect();
         }
       }
-      delay(200);
+      vTaskDelay(100);
     }
-    vTaskDelete(nullptr); // shoud we every exit
+    vTaskDelete(nullptr); // should we every exit
   }
 
   // dispatch to member function
@@ -355,9 +382,13 @@ private:
   };
   std::queue<mqtt_msg> mqtt_messages;
   volatile bool pending_data;
-  SemaphoreHandle_t mutex_;
+  SemaphoreHandle_t mutex_ = nullptr;
   TaskHandle_t pump_task_;
+  TaskHandle_t connect_task_;
+  TaskHandle_t task_to_notify_;
   mqtt_command_handler command_handler_;
   volatile MQTTClientState connection_state_;
 };
+SemaphoreHandle_t MqttPublish::connect_mux_ = nullptr;
+int MqttPublish::timeouts = 0;
 #endif

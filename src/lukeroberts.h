@@ -415,9 +415,9 @@ public:
           [&new_scene_received, &last_reported_scene](
               NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
               size_t length, bool isNotify) {
-            char tmp[32];
-            if (length > 32)
-              length = 32;
+            char tmp[64];
+            if (length > 63)
+              length = 63;
             if (pData[1] == 1) {
               strncpy(tmp, (const char *)&pData[3], length - 3);
               tmp[length - 3] = '\0';

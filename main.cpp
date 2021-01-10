@@ -808,6 +808,11 @@ void setup() {
   }
   mqtt.init(network_client, parse_command);
 
+#if RELAY_PIN != 0
+  pinMode(RELAY_PIN, OUTPUT);
+  set_powerstate(true);
+#endif
+
 #ifdef LR_BLEADDRESS
   lr.client().init(NimBLEAddress(LR_BLEADDRESS, 1));
 #else
@@ -925,10 +930,7 @@ void setup() {
   buttonConfig->setRepeatPressInterval(1500);
 #endif
 
-#if RELAY_PIN != 0
-  pinMode(RELAY_PIN, OUTPUT);
-#endif
-  log_d("Inital State: Power = %d scene %d", get_powerstate(), get_scene());
+log_d("Inital State: Power = %d scene %d", get_powerstate(), get_scene());
 
 #ifndef LR_BLEADDRESS
   mqtt.queue("tele/" HOSTNAME "/BLEADDRESS", device_addr.toString().c_str());
