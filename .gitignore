@@ -15,10 +15,9 @@ src/main - Copy.cpp.txt
 src/main - Copy.cpp.txt
 src/main.txt
 src/rotary.cpp.txt
-src/main.txt
 workspace.code-workspace
 src/mqtt_handler-old.h
 src/main.cpp-old.txt
 src/mqtt_handler.h.256
 doc/architecture.md
-src/main.txt
+
