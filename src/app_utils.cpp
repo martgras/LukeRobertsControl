@@ -91,14 +91,24 @@ void AppUtils::setupOta(
 void AppUtils::start_network_keepalive() {
 #ifndef USE_ETHERNET
   if (network_mode_ == NetworkMode::kWifi) {
-    xTaskCreatePinnedToCore(keep_wifi_alive,
-                            "keepWiFiAlive", // Task name
-                            8192,            // Stack size (bytes)
-                            nullptr,         // Parameter
-                            1,               // Task priority
-                            nullptr,         // Task handle
-                            1                // Core 1
-                            );
+    xTaskCreatePinnedToCore(
+        [](void *) {
+          while (true) {
+            if (WiFi.status() == WL_CONNECTED) {
+              vTaskDelay(5000 / portTICK_PERIOD_MS);
+              continue;
+            }
+            log_w("trying to reconnect wifi");
+            start_wifi();
+          }
+        },
+        "keepWiFiAlive", // Task name
+        8192,            // Stack size (bytes)
+        nullptr,         // Parameter
+        1,               // Task priority
+        nullptr,         // Task handle
+        1                // Core 1
+        );
   }
 #endif
 }
@@ -164,17 +174,6 @@ void AppUtils::writecfg(void) {
   wifi_cfgbuf.chk = -x;
   log_d("RTC write: chk=%x x=%x ip=%08x mode=%d\n", wifi_cfgbuf.chk, x,
         wifi_cfgbuf.ip, wifi_cfgbuf.mode);
-}
-
-void AppUtils::keep_wifi_alive(void *) {
-  for (;;) {
-    if (WiFi.status() == WL_CONNECTED) {
-      vTaskDelay(5000 / portTICK_PERIOD_MS);
-      continue;
-    }
-    log_w("trying to reconnect wifi");
-    start_wifi();
-  }
 }
 
 bool AppUtils::start_wifi() {

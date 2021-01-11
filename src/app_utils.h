@@ -83,8 +83,6 @@ public:
   bool ota_started() { return inOTA; }
 
 private:
-  static void keep_wifi_alive(void *parameter);
-  static void keep_eth_alive(void *parameter);
   static bool inOTA;
   static RTC_DATA_ATTR uint16_t boot_counter;
   static RTC_DATA_ATTR uint32_t last_sleep_time;
