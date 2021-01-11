@@ -32,7 +32,7 @@ every button. Default is 10 for up and -10 for down
 #define LONG_PRESS_DELAY 1500
 #endif
 #ifndef LONG_PRESS_INTERVAL
-#define LONG_PRESS_INTERVAL 1500
+#define LONG_PRESS_INTERVAL 500
 #endif
 #ifndef DOUBLE_CLICK_INTERVAL
 #define DOUBLE_CLICK_INTERVAL 400
@@ -174,9 +174,11 @@ static const int button_down_pin_step_value =
 static const uint8_t button_down_pin = GPIO_NUM_0;
 #endif
 
-
 #if defined(RESISTOR_BUTTON_PIN)
 
+#if RESISTOR_BUTTON_SWITCH == 0
+#undef RESISTOR_BUTTON_SWITCH
+#endif
 #if defined(RESISTOR_BUTTON_SWITCH)
 static const uint16_t resistor_switch = RESISTOR_BUTTON_SWITCH;
 
@@ -213,6 +215,10 @@ static const int resistor_switch_step_value =
 #else
 static const uint16_t resistor_switch = 0;
 #endif // if defined(RESISTOR_BUTTON_SWITCH)
+
+#if RESISTOR_BUTTON_SWITCH2 == 0
+#undef RESISTOR_BUTTON_SWITCH2
+#endif
 
 #if defined(RESISTOR_BUTTON_SWITCH_2)
 static const uint16_t resistor_switch_2 = RESISTOR_BUTTON_SWITCH;
@@ -251,6 +257,9 @@ static const int resistor_switch_step_2_value =
 static const uint16_t resistor_switch_2 = 0;
 #endif // if defined(RESISTOR_BUTTON_SWITCH_2)
 
+#if RESISTOR_BUTTON_UP == 0
+#undef RESISTOR_BUTTON_UP
+#endif
 #ifdef RESISTOR_BUTTON_UP
 static const uint16_t resistor_up = RESISTOR_BUTTON_UP;
 
@@ -282,6 +291,10 @@ static const int resistor_up_step_value =
 #endif
 #else
 static const uint16_t resistor_up = 0;
+#endif
+
+#if RESISTOR_BUTTON_DOWN == 0
+#undef RESISTOR_BUTTON_DOWN
 #endif
 
 #ifdef RESISTOR_BUTTON_DOWN
@@ -319,10 +332,11 @@ static const int resistor_down_step_value =
 static const uint16_t resistor_down = 0;
 #endif
 
-
+#if RESISTOR_BUTTON_D1 == 0
+#undef RESISTOR_BUTTON_D1
+#endif
 
 #if defined(RESISTOR_BUTTON_D1)
-
 static const uint16_t resistor_d1 = RESISTOR_BUTTON_D1;
 
 static const button_function_codes resistor_d1_click_action =
@@ -334,16 +348,14 @@ static const button_function_codes resistor_d1_click_action =
 
 static const button_function_codes resistor_d1_double_click_action =
 #if defined(RESISTOR_BUTTON_D1_DOUBLE_CLICK_ACTION)
-    static_cast<button_function_codes>(
-        RESISTOR_BUTTON_D1_DOUBLE_CLICK_ACTION);
+    static_cast<button_function_codes>(RESISTOR_BUTTON_D1_DOUBLE_CLICK_ACTION);
 #else
     kNoop;
 #endif // if defined(RESISTOR_BUTTON_D1_DOUBLE_CLICK_ACTION)
 
 static const button_function_codes resistor_d1_long_press_action =
 #if defined(RESISTOR_BUTTON_D1_LONG_PRESS_ACTION)
-    static_cast<button_function_codes>(
-        RESISTOR_BUTTON_D1_LONG_PRESS_ACTION);
+    static_cast<button_function_codes>(RESISTOR_BUTTON_D1_LONG_PRESS_ACTION);
 #else
     kNextScene;
 #endif // if defined(RESISTOR_BUTTON_D1_LONG_PRESS_ACTION)
@@ -359,9 +371,10 @@ static const int resistor_d1_step_value =
 static const uint16_t resistor_d1 = 0;
 #endif // if defined(RESISTOR_BUTTON_D1)
 
-
+#if RESISTOR_BUTTON_D2 == 0
+#undef RESISTOR_BUTTON_D2
+#endif
 #if defined(RESISTOR_BUTTON_D2)
-
 static const uint16_t resistor_d2 = RESISTOR_BUTTON_D2;
 
 static const button_function_codes resistor_d2_click_action =
@@ -373,16 +386,14 @@ static const button_function_codes resistor_d2_click_action =
 
 static const button_function_codes resistor_d2_double_click_action =
 #if defined(RESISTOR_BUTTON_D2_DOUBLE_CLICK_ACTION)
-    static_cast<button_function_codes>(
-        RESISTOR_BUTTON_D2_DOUBLE_CLICK_ACTION);
+    static_cast<button_function_codes>(RESISTOR_BUTTON_D2_DOUBLE_CLICK_ACTION);
 #else
     kNoop;
 #endif // if defined(RESISTOR_BUTTON_D2_DOUBLE_CLICK_ACTION)
 
 static const button_function_codes resistor_d2_long_press_action =
 #if defined(RESISTOR_BUTTON_D2_LONG_PRESS_ACTION)
-    static_cast<button_function_codes>(
-        RESISTOR_BUTTON_D2_LONG_PRESS_ACTION);
+    static_cast<button_function_codes>(RESISTOR_BUTTON_D2_LONG_PRESS_ACTION);
 #else
     kNextScene;
 #endif // if defined(RESISTOR_BUTTON_D2_LONG_PRESS_ACTION)
@@ -393,18 +404,17 @@ static const int resistor_d2_step_value =
 #else
     10;
 #endif // if defined(RESISTOR_BUTTON_D2_STEP_VALUE)
-
 #else
 static const uint16_t resistor_d2 = 0;
 #endif // if defined(RESISTOR_BUTTON_D2)
-
 
 #else
 static const uint8_t resistor_pin = GPIO_NUM_0;
 #endif
 
-
-
+#if defined(RESISTOR_BUTTON_D1) || defined(RESISTOR_BUTTON_UP) ||              \
+    defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||            \
+    defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_SWITCH2)
 
 void handle_button_event(AceButton *button, uint8_t eventType,
                          uint8_t buttonState);
@@ -414,7 +424,7 @@ using button_func_t = std::function<void(int value)>;
 struct button_handler {
   uint8_t id;
   int8_t step_value;
-  button_func_t event_handlers[button_function_codes::MAX__] = {};
+  button_func_t event_handlers[8] = {};
 };
 
 button_handler buttons[16];
@@ -431,9 +441,18 @@ void IRAM_ATTR isr_extraswitch(void *) {
   }
 }
 #endif
-uint8_t single_button_idx;
+uint8_t single_button_idx_;
+SemaphoreHandle_t button_mux_ = nullptr;
+
+#endif
+
 void setup_buttons() {
+#if defined(RESISTOR_BUTTON_D1) || defined(RESISTOR_BUTTON_UP) ||              \
+    defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||            \
+    defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_SWITCH2)
+
   uint8_t button_idx = 0;
+  button_handler *b;
 
   button_functions[kNoop] = [](int) {};
 
@@ -470,8 +489,6 @@ void setup_buttons() {
   static ace_button::AceButton rotary_button;
   rotary_button.setButtonConfig(&button_cfg);
   rotary_button.init(ROTARY_BUTTON_PIN, HIGH, ROTARY_BUTTON_PIN);
-
-  button_handler *b;
 
   b = &buttons[button_idx++];
   b->id = rotary_button.getId();
@@ -538,7 +555,7 @@ void setup_buttons() {
   single_cfg.setRepeatPressInterval(LONG_PRESS_INTERVAL);
   single_cfg.setDoubleClickDelay(DOUBLE_CLICK_INTERVAL);
 
-  single_button_idx = button_idx;
+  single_button_idx_ = button_idx;
   b = &buttons[button_idx++];
 
   // needs a separate event handler to allow chaning the direction for dimming
@@ -555,10 +572,10 @@ void setup_buttons() {
       if (last_event != AceButton::kEventRepeatPressed &&
           millis() - last_press < 10000) {
         log_i("Direction switch");
-        buttons[single_button_idx].step_value *= -1;
+        buttons[single_button_idx_].step_value *= -1;
       }
       button_functions[single_button_long_press_action](
-          buttons[single_button_idx].step_value);
+          buttons[single_button_idx_].step_value);
       last_press = millis();
     }
     if (eventType == AceButton::kEventClicked && millis() - last_press > 500) {
@@ -588,13 +605,31 @@ void setup_buttons() {
 
 #if defined(RESISTOR_BUTTON_PIN)
   pinMode(RESISTOR_BUTTON_PIN, INPUT_PULLUP);
-#define RESISTOR_BUTTON_UP_VPIN 1
-#define RESISTOR_BUTTON_DOWN_VPIN 2
 
+#if defined(RESISTOR_BUTTON_D1)
+#define RESISTOR_BUTTON_D1_VPIN 0
+  static AceButton resistor_d1(uint8_t(RESISTOR_BUTTON_D1_VPIN), HIGH,
+                               RESISTOR_BUTTON_D1_VPIN | 0x80);
+#endif
+
+#if defined(RESISTOR_BUTTON_UP)
+#define RESISTOR_BUTTON_UP_VPIN 1
   static AceButton resistor_up((uint8_t)RESISTOR_BUTTON_UP_VPIN, HIGH,
                                RESISTOR_BUTTON_UP_VPIN | 0x80);
+#endif
+
+#if defined(RESISTOR_BUTTON_DOWN)
+#define RESISTOR_BUTTON_DOWN_VPIN 2
   static AceButton resistor_down(RESISTOR_BUTTON_DOWN_VPIN, HIGH,
                                  RESISTOR_BUTTON_DOWN_VPIN | 0x80);
+#endif
+
+#if defined(RESISTOR_BUTTON_D2)
+#define RESISTOR_BUTTON_D2_VPIN 3
+  static AceButton resistor_d2(RESISTOR_BUTTON_D2_VPIN, HIGH,
+                               RESISTOR_BUTTON_D2_VPIN | 0x80);
+#endif
+
 #ifdef RESISTOR_BUTTON_SWITCH
 #define RESISTOR_BUTTON_SWITCH_VPIN 4
   static AceButton resistor_sw(RESISTOR_BUTTON_SWITCH_VPIN, HIGH,
@@ -606,43 +641,51 @@ void setup_buttons() {
                                  RESISTOR_BUTTON_SWITCH_2_VPIN | 0x80);
 #endif
 
-#if defined(RESISTOR_BUTTON_D1)
-#define RESISTOR_BUTTON_D1_VPIN 0 
-  static AceButton resistor_d1(uint8_t(RESISTOR_BUTTON_D1_VPIN), HIGH,
-                                 RESISTOR_BUTTON_D1_VPIN | 0x80);
-#endif
-
-#if defined(RESISTOR_BUTTON_D2)
-#define RESISTOR_BUTTON_D2_VPIN 3
-  static AceButton resistor_d2(RESISTOR_BUTTON_D2_VPIN, HIGH,
-                                 RESISTOR_BUTTON_D2_VPIN | 0x80);
-#endif
-
+  // Hard to read with the #define handling to remove unused buttons
   static AceButton *const resistor_buttons[] = {
 #ifdef RESISTOR_BUTTON_D1
-    &resistor_d1,
+    &resistor_d1
+// Are more params to folllow then a comma is is equired
+#if defined(RESISTOR_BUTTON_UP) || defined(RESISTOR_BUTTON_DOWN) ||            \
+    defined(RESISTOR_BUTTON_D2) || defined(RESISTOR_BUTTON_SWITCH) ||          \
+    defined(RESISTOR_SWITCH2)
+    ,
+#endif
 #endif
 #ifdef RESISTOR_BUTTON_UP
     &resistor_up
-#else
-#error RESISTOR_BUTTON_UP must be defined
+#if defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||            \
+    defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_SWITCH2)
+    ,
 #endif
+#endif
+
 #ifdef RESISTOR_BUTTON_DOWN
-    ,&resistor_down
+    &resistor_down
+#if defined(RESISTOR_BUTTON_D2) || defined(RESISTOR_BUTTON_SWITCH) ||          \
+    defined(RESISTOR_SWITCH2)
+    ,
+#endif
 #endif
 #ifdef RESISTOR_BUTTON_D2
-    ,&resistor_d2
+    &resistor_d2
+#if defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_SWITCH2)
+    ,
+#endif
 #endif
 #ifdef RESISTOR_BUTTON_SWITCH
-    ,&resistor_sw
+    &resistor_sw
+#if defined(RESISTOR_SWITCH2)
+    ,
+#endif
 #endif
 #if defined(RESISTOR_BUTTON_SWITCH_2)
-    ,&resistor_sw_2
+    &resistor_sw_2
 #endif
-};
+  };
 
-// Note: levels must be sorted asc.
-static const uint16_t levels[] = {
+  // Note: levels must be sorted asc.
+  static const uint16_t levels[] = {
 
 #if defined(RESISTOR_BUTTON_D1)
     RESISTOR_BUTTON_D1,
@@ -662,142 +705,159 @@ static const uint16_t levels[] = {
 #ifdef RESISTOR_BUTTON_SWITCH_2
     RESISTOR_BUTTON_SWITCH_2,
 #endif
-    4095};
+    4095
+  };
 
-static LadderButtonConfig resistor_button_config(
-    RESISTOR_BUTTON_PIN, sizeof(levels) / sizeof(levels[0]), levels,
-    sizeof(resistor_buttons) / sizeof(resistor_buttons[0]), resistor_buttons);
+  static LadderButtonConfig resistor_button_config(
+      RESISTOR_BUTTON_PIN, sizeof(levels) / sizeof(levels[0]), levels,
+      sizeof(resistor_buttons) / sizeof(resistor_buttons[0]), resistor_buttons);
 
-resistor_button_config.setFeature(ButtonConfig::kFeatureRepeatPress);
-resistor_button_config.setFeature(
-    ButtonConfig::kFeatureSuppressAfterRepeatPress);
-resistor_button_config.setFeature(
-    ButtonConfig::kFeatureSuppressAfterDoubleClick);
-resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY);
-resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL);
-resistor_button_config.setEventHandler(handle_button_event);
+  resistor_button_config.setFeature(ButtonConfig::kFeatureRepeatPress);
+  resistor_button_config.setFeature(
+      ButtonConfig::kFeatureSuppressAfterRepeatPress);
+  resistor_button_config.setFeature(
+      ButtonConfig::kFeatureSuppressAfterDoubleClick);
+  resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY);
+  resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL);
+  resistor_button_config.setEventHandler(handle_button_event);
 
 #ifdef RESISTOR_BUTTON_D1
-b = &buttons[button_idx++];
-b->id = resistor_d1.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_d1_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_d1_long_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_d1_double_click_action];
-b->step_value = resistor_d1_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_d1.getId();
+  if (RESISTOR_BUTTON_D1 == 0) { // disable it
+    b->event_handlers[AceButton::kEventClicked] = button_functions[kNoop];
+    b->event_handlers[AceButton::kEventReleased] = button_functions[kNoop];
+    b->event_handlers[AceButton::kEventRepeatPressed] = button_functions[kNoop];
+    b->event_handlers[AceButton::kEventDoubleClicked] = button_functions[kNoop];
+    b->step_value = 0;
+  } else {
+    b->event_handlers[AceButton::kEventReleased] =
+        button_functions[resistor_d1_click_action];
+    b->event_handlers[AceButton::kEventRepeatPressed] =
+        button_functions[resistor_d1_long_press_action];
+    b->event_handlers[AceButton::kEventDoubleClicked] =
+        button_functions[resistor_d1_double_click_action];
+    b->step_value = resistor_d1_step_value;
+  }
 #endif
 
 #ifdef RESISTOR_BUTTON_UP
-b = &buttons[button_idx++];
-b->id = resistor_up.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_up_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_up_long_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_up_double_click_action];
-b->step_value = resistor_up_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_up.getId();
+  b->event_handlers[AceButton::kEventReleased] =
+      button_functions[resistor_up_click_action];
+  b->event_handlers[AceButton::kEventRepeatPressed] =
+      button_functions[resistor_up_long_press_action];
+  b->event_handlers[AceButton::kEventDoubleClicked] =
+      button_functions[resistor_up_double_click_action];
+  b->step_value = resistor_up_step_value;
 #endif
 
 #ifdef RESISTOR_BUTTON_DOWN
-b = &buttons[button_idx++];
-b->id = resistor_down.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_down_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_down_long_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_down_long_press_action];
-b->step_value = resistor_down_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_down.getId();
+  b->event_handlers[AceButton::kEventReleased] =
+      button_functions[resistor_down_click_action];
+  b->event_handlers[AceButton::kEventRepeatPressed] =
+      button_functions[resistor_down_long_press_action];
+  b->event_handlers[AceButton::kEventDoubleClicked] =
+      button_functions[resistor_down_long_press_action];
+  b->step_value = resistor_down_step_value;
 #endif
 
 #ifdef RESISTOR_BUTTON_D2
-b = &buttons[button_idx++];
-b->id = resistor_d2.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_d2_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_d2_long_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_d2_double_click_action];
-b->step_value = resistor_d2_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_d2.getId();
+  b->event_handlers[AceButton::kEventReleased] =
+      button_functions[resistor_d2_click_action];
+  b->event_handlers[AceButton::kEventRepeatPressed] =
+      button_functions[resistor_d2_long_press_action];
+  b->event_handlers[AceButton::kEventDoubleClicked] =
+      button_functions[resistor_d2_double_click_action];
+  b->step_value = resistor_d2_step_value;
 #endif
 
 #ifdef RESISTOR_BUTTON_SWITCH
-b = &buttons[button_idx++];
-b->id = resistor_sw.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_switch_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_switch_long_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_switch_long_press_action];
-b->step_value = resistor_switch_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_sw.getId();
+  b->event_handlers[AceButton::kEventReleased] =
+      button_functions[resistor_switch_click_action];
+  b->event_handlers[AceButton::kEventRepeatPressed] =
+      button_functions[resistor_switch_long_press_action];
+  b->event_handlers[AceButton::kEventDoubleClicked] =
+      button_functions[resistor_switch_long_press_action];
+  b->step_value = resistor_switch_step_value;
 #endif
 
 #ifdef RESISTOR_BUTTON_SWITCH_2
-b = &buttons[button_idx++];
-b->id = resistor_sw_2.getId();
-b->event_handlers[AceButton::kEventReleased] =
-    button_functions[resistor_switch_2_click_action];
-b->event_handlers[AceButton::kEventRepeatPressed] =
-    button_functions[resistor_switch_long_2_press_action];
-b->event_handlers[AceButton::kEventDoubleClicked] =
-    button_functions[resistor_switch_2_long_press_action];
-b->step_value = resistor_switch_2_step_value;
+  b = &buttons[button_idx++];
+  b->id = resistor_sw_2.getId();
+  b->event_handlers[AceButton::kEventReleased] =
+      button_functions[resistor_switch_2_click_action];
+  b->event_handlers[AceButton::kEventRepeatPressed] =
+      button_functions[resistor_switch_long_2_press_action];
+  b->event_handlers[AceButton::kEventDoubleClicked] =
+      button_functions[resistor_switch_2_long_press_action];
+  b->step_value = resistor_switch_2_step_value;
 #endif
 
 #endif
 
 #ifdef SWITCH_PIN
-pinMode(SWITCH_PIN, INPUT_PULLUP);
-attachInterruptArg(SWITCH_PIN, isr_extraswitch, (void *) & lr, CHANGE);
+  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  attachInterruptArg(SWITCH_PIN, isr_extraswitch, (void *)&lr, CHANGE);
 #endif
 
-#if defined(ROTARY_BUTTON_PIN) || defined(SINGLE_BUTTON_PIN) || \
-    defined(RESISTOR_BUTTON_PIN) || defined(BUTTON_DOWN_PIN)
-xTaskCreate([&](void *) {
-  while (1) {
+  xTaskCreate([&](void *) {
+    while (1) {
 #ifdef ROTARY_BUTTON_PIN
-    rotary_button.check();
+      rotary_button.check();
 #endif
 #ifdef SINGLE_BUTTON_PIN
-    single_button.check();
+      single_button.check();
 #endif
 #ifdef RESISTOR_BUTTON_PIN
-    resistor_button_config.checkButtons();
+      resistor_button_config.checkButtons();
 #endif
 #ifdef BUTTON_DOWN_PIN
-    down_button.check();
-    up_button.check();
+      down_button.check();
+      up_button.check();
 #endif
-    vTaskDelay(5 / portTICK_PERIOD_MS);
+      vTaskDelay(5 / portTICK_PERIOD_MS);
+    }
+  }, "acebuttoncheck", 4096, nullptr, 2, nullptr);
+
+  if (button_mux_) {
+    vSemaphoreDelete(button_mux_);
   }
-}, "acebuttoncheck", 2048 , nullptr, 2, nullptr);
-#endif
+  button_mux_ = xSemaphoreCreateMutex();
 }
 
-portMUX_TYPE button_mux = portMUX_INITIALIZER_UNLOCKED;
 void handle_button_event(AceButton *button, uint8_t eventType,
                          uint8_t buttonState) {
+
   auto pin = button->getPin();
   auto id = button->getId();
   log_d("Button event PIN=%d, ID: %d event %d", pin, id, eventType);
   if (pin == GPIO_NUM_0 && id == 0) {
     return;
   }
-  portENTER_CRITICAL(&button_mux);
-  for (auto b : buttons) {
-    if (b.id == button->getId()) {
-      if (b.event_handlers[eventType]) {
-        b.event_handlers[eventType](b.step_value);
+  if (xSemaphoreTake(button_mux_, portMAX_DELAY)) {
+    for (auto b : buttons) {
+      if (b.id == button->getId()) {
+        if (eventType <
+                (sizeof(b.event_handlers) / sizeof(b.event_handlers[0])) &&
+            b.event_handlers[eventType]) {
+          b.event_handlers[eventType](b.step_value);
+        }
+        xSemaphoreGive(button_mux_);
+        return;
       }
-      portEXIT_CRITICAL(&button_mux);
-      return;
     }
+    xSemaphoreGive(button_mux_);
   }
-  portEXIT_CRITICAL(&button_mux);
+#endif // if defined(RESISTOR_BUTTON_D1) || defined(RESISTOR_BUTTON_UP) ||
+       // defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||
+       // defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_SWITCH2)
 }
 }

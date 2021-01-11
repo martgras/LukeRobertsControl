@@ -23,7 +23,7 @@ static const BLEUUID charUUID("44092842-0567-11E6-B862-0002A5D5C51B");
 static const BLEUUID charUUID_Scene("44092844-0567-11E6-B862-0002A5D5C51B");
 
 const uint8_t default_qos = 0;
-class LR_Ble_Device {
+class LukeRobertsLamp {
 public:
   using mqtt_publish_topic_t =
       std::function<void(const char *, const char *, bool, uint8_t)>;
@@ -48,7 +48,7 @@ public:
 
   mqtt_publish_topic_t mqtt_publisher;
 
-  LR_Ble_Device(mqtt_publish_topic_t mqttpublisher)
+  LukeRobertsLamp(mqtt_publish_topic_t mqttpublisher)
       : mqtt_publisher(mqttpublisher) {
 
     // Setup the cached commands
@@ -110,30 +110,30 @@ public:
     // Flags.
     //
     gatt_client_.register_callback_notification(
-        id,
-        [](NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
-           size_t length, bool is_notify) {
-          return (BleGattClient::matches_api_characteristics(
-                      pRemoteCharacteristic->getUUID()) &&
-                  length == 9 && pData[0] == 0 && pData[1] == 0x88 &&
-                  pData[2] == 0xF4 && pData[3] == 0x18 && pData[4] == 0x71);
-        },
-        [&](NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
-            size_t length, bool is_notify) {
-          uint8_t brightness = pData[7];
-          uint16_t kelvin = pData[5] | pData[6] << 8;
-          // update state and publish new values
-          state_.brightness = brightness;
-          state_.kelvin = kelvin;
-          state_.mired = switch_kelvin_mired(state_.kelvin);
-          char json[32];
-          snprintf(json, sizeof(json), "%d", state().mired);
-          mqtt_publisher("stat/" HOSTNAME "/CT", json, false, default_qos);
-          snprintf(json, sizeof(json), "%d", state().brightness);
-          mqtt_publisher("stat/" HOSTNAME "/DIMMER", json, false, default_qos);
-          mqtt_publisher("stat/" HOSTNAME "/RESULT",
-                         this->create_state_message(), true, default_qos);
-          return true;
+        id, [&](NimBLERemoteCharacteristic *pRemoteCharacteristic,
+                uint8_t *pData, size_t length, bool is_notify) {
+          if (BleGattClient::matches_api_characteristics(
+                  pRemoteCharacteristic->getUUID()) &&
+              length == 9 && pData[0] == 0 && pData[1] == 0x88 &&
+              pData[2] == 0xF4 && pData[3] == 0x18 && pData[4] == 0x71) {
+
+            uint8_t brightness = pData[7];
+            uint16_t kelvin = pData[5] | pData[6] << 8;
+            // update state and publish new values
+            state_.brightness = brightness;
+            state_.kelvin = kelvin;
+            state_.mired = switch_kelvin_mired(state_.kelvin);
+            char json[32];
+            snprintf(json, sizeof(json), "%d", state().mired);
+            mqtt_publisher("stat/" HOSTNAME "/CT", json, false, default_qos);
+            snprintf(json, sizeof(json), "%d", state().brightness);
+            mqtt_publisher("stat/" HOSTNAME "/DIMMER", json, false,
+                           default_qos);
+            mqtt_publisher("stat/" HOSTNAME "/RESULT",
+                           this->create_state_message(), true, default_qos);
+            return true;
+          } else
+            return false;
         });
     gatt_client_.start_ble_loop();
   }
@@ -407,24 +407,19 @@ public:
           [&new_scene_received, &last_reported_scene](
               NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
               size_t length, bool isNotify) {
-            // is the request in the expected format?
-            return (length > 4 &&
-                    pRemoteCharacteristic->getUUID() == charUUID() &&
-                    pData[0] == 0 && pData[1] == 1);
-          },
-          [&new_scene_received, &last_reported_scene](
-              NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
-              size_t length, bool isNotify) {
-            char tmp[64];
-            if (length > 63)
-              length = 63;
-            if (pData[1] == 1) {
-              strncpy(tmp, (const char *)&pData[3], length - 3);
-              tmp[length - 3] = '\0';
-              log_d("Scene notification : %d : %s", pData[2], tmp);
-              scenes[last_reported_scene] = tmp;
-              last_reported_scene = pData[2];
-              xSemaphoreGive(new_scene_received);
+            if (length > 4 && pRemoteCharacteristic->getUUID() == charUUID() &&
+                pData[0] == 0 && pData[1] == 1) {
+              char tmp[64];
+              if (length > 63)
+                length = 63;
+              if (pData[1] == 1) {
+                strncpy(tmp, (const char *)&pData[3], length - 3);
+                tmp[length - 3] = '\0';
+                log_d("Scene notification : %d : %s", pData[2], tmp);
+                scenes[last_reported_scene] = tmp;
+                last_reported_scene = pData[2];
+                xSemaphoreGive(new_scene_received);
+              }
             }
           });
     }
@@ -482,9 +477,9 @@ private:
   RTC_DATA_ATTR static State saved_state_;
 };
 
-RTC_DATA_ATTR LR_Ble_Device::State
-    LR_Ble_Device::saved_state_; // store settings before power-off
-std::map<uint8_t, std::string> LR_Ble_Device::scenes = {{0, "OFF"}};
+RTC_DATA_ATTR LukeRobertsLamp::State
+    LukeRobertsLamp::saved_state_; // store settings before power-off
+std::map<uint8_t, std::string> LukeRobertsLamp::scenes = {{0, "OFF"}};
 
 #ifdef USE_SCENE_MAPPER
 // Probably not neded anymore since we now have an API to request the current
