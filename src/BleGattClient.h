@@ -21,11 +21,6 @@ public:
   bool connect_to_server(BLEUUID charUUID,
                          on_complete_callback on_complete = nullptr);
 
-  static notify_callback set_on_notify(notify_callback on_notify) {
-    auto tmp = on_notify_;
-    on_notify_ = on_notify;
-    return tmp;
-  }
 
   void start_ble_loop();
 
@@ -105,7 +100,6 @@ public:
   NimBLEClient *client;
 
 private:
-  static notify_callback on_notify_;
   static bool initialized_;
   volatile bool connected_;
 
@@ -113,8 +107,7 @@ private:
   static on_complete_callback on_disconnect_;
 
   /**  None of these are required as they will be handled by the library with
-   *defaults. **
-   **                       Remove as you see fit for your needs */
+   *defaults. **** Remove as you see fit for your needs */
   class ClientCallbacks : public NimBLEClientCallbacks {
     void onConnect(NimBLEClient *pClient) {
       if (on_connect_) {
@@ -207,7 +200,6 @@ private:
   struct ble_notify_callback_t {
     uint8_t id;
     bool is_enabled;
-    match_func_t match;
     notify_callback notify;
   };
 
@@ -218,10 +210,9 @@ public:
     return uuid.equals(charUUID);
   }
 
-  void register_callback_notification(uint8_t id, match_func_t match_func,
-                                      notify_callback notify_func,
+  void register_callback_notification(uint8_t id, notify_callback notify_func,
                                       bool enable = true) {
-    ble_notify_callback_t new_cb = {id, enable, match_func, notify_func};
+    ble_notify_callback_t new_cb = {id, enable, notify_func};
     for (auto &c : callbacks_) {
       if (c.id == id) {
         c = new_cb;
@@ -275,28 +266,13 @@ private:
       log_v("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
     }
     for (auto cb : callbacks_) {
-      if (cb.is_enabled &&
-          cb.match(pRemoteCharacteristic, pData, length, isNotify)) {
+      if (cb.is_enabled) {
         cb.notify(pRemoteCharacteristic, pData, length, isNotify);
       }
-    }
-    /*
-        if (on_downlight_notification_ != nullptr &&
-            pRemoteCharacteristic->getUUID() == charUUID && length == 9 &&
-            pData[0] == 0 && pData[1] == 0x88 && pData[2] == 0xF4 &&
-            pData[3] == 0x18 && pData[4] == 0x71) {
-          on_downlight_notification_(pData[7], pData[5] | pData[6] << 8);
-        }
-    */
-    if (on_notify_ != nullptr) {
-      on_notify_(pRemoteCharacteristic, pData, length, isNotify);
     }
   }
 
   ClientCallbacks client_cb_;
 };
 
-// void get_all_scenes(BleGattClient &client);
-// uint8_t get_current_scene(BleGattClient &client);
-// void request_downlight_settings(BleGattClient &client);
 NimBLEAddress scan_for_device();

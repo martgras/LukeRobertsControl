@@ -1,4 +1,5 @@
 [usersettings]
+board =  firebeetle32  ## select your board
 build_flags = -DWIFISID='"mywifi"'
             -DWIFIPASSWORD='"mysecret-wifi-pwd"'
             -DMQTTUSER='nullptr'                        ## if you need mqtt user and password make sure to correctly quote them as in WIFIPASSWORD above
@@ -42,21 +43,21 @@ build_flags = -DWIFISID='"mywifi"'
             -RESISTOR_BUTTON_UP_CLICK_ACTION=kChangeBrightness
 ;            ## A virtual pin triggered if RESISTOR_BUTTON_UP and DRESISTOR_BUTTON_DOWN are pressed together
 ;            -DRESISTOR_BUTTON_D1=970                    ## 3.3k (both buttons pressed 5.1 and 10k parallel)
-;            -DRESISTOR_BUTTON_UP=1000                   ## 5.1k
+;            -DRESISTOR_BUTTON_UP=1450                   ## 5.1k
 ;            -DRESISTOR_BUTTON_DOWN=1840                 ## 10k
 ;            ## A virtual pin triggered if RESISTOR_BUTTON_SWITCH and DRESISTOR_BUTTON_SWITCH2 are pressed together
-;            -DRESISTOR_BUTTON_D2=22500                 ## 15k (both buttons pressed 22k and 47k parallel)
+;            -DRESISTOR_BUTTON_D2=2250                 ## 15k (both buttons pressed 22k and 47k parallel) set to 0 if you want to disable it
 ;            -DRESISTOR_BUTTON_SWITCH=2620               ## 22k
 ;            -DRESISTOR_BUTTON_SWITCH2=3220               ## 47k
 
-  
+
 ;            -DBUTTON_DOWN_PIN=GPIO_NUM_5                ## regular push buttons attached to GPIO
-;            -DBUTTON_DOWN_PIN_LONG_PRESS_ACTION=kNoop  ## the the action to no operation 
+;            -DBUTTON_DOWN_PIN_LONG_PRESS_ACTION=kNoop  ## the the action to no operation
 ;            -DBUTTON_UP_PIN=GPIO_NUM_17                 ##
 ;            -DBUTTON_UP_PIN_STEP_VALUE=20              ## Change the step value for the button
 
             ### LONG PRESS Behavior: LONG PRESS on the rotary button is used to switch to the next scene. LONG_PRESS_DELAY defines how long the button must be pressed for the first event.
             ###                      LONG_PRESS_INTERVAL defines how long it takes to switch to the next scene
 ;            -DLONG_PRESS_DELAY=1500                     ## number of milliseconds to start a long press event. defaults to 1500ms if not defined
-;            -DLONG_PRESS_INTERVAL=1500                  ## number of milliseconds to fire the next long press event. defaults to 1500ms if not defined
+;            -DLONG_PRESS_INTERVAL=500                  ## number of milliseconds to fire the next long press event. defaults to 1500ms if not defined
 ;            -DDOUBLE_CLICK_INTERVAL=500                  ## max number of milliseconds to between 2 clicks to be a double click. defaults to 500ms if not defined

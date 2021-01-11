@@ -115,8 +115,6 @@ public:
       mutex_ = nullptr;
     }
   }
-  static SemaphoreHandle_t connect_mux_;
-
   void recreate_client() {
     /*
         if (mqtt_client) {
@@ -162,9 +160,8 @@ public:
     xSemaphoreGive(connect_mux_);
   }
 
-  static int timeouts;
+  
   void start() {
-    pending_data = false;
 
     mutex_ = xSemaphoreCreateMutex();
     mqtt_client->onPublish([](uint16_t id) { log_d("Packet %d ack %d", id); });
@@ -193,18 +190,26 @@ public:
     mqtt_client->disconnect();
   }
 
-  bool mqtt_connect() { return mqtt_reconnect(); }
-
+  bool mqtt_connect() {
+    xSemaphoreGive(connect_mux_);
+    return true ;
+  }
+  
   bool mqtt_reconnect() {
-
+    
+    if (!app_utils::AppUtils::network_connected()) {
+      log_e("MQTT Connect: network not connected");
+      return false ;
+    }
+    static int timeouts;
     if (connection_state_ == MQTT_CLIENT_CONNECTING) {
-      log_i(" already connecting to MQTT ...");
-      delay(500);
+      log_i("already connecting to MQTT ...");
+      vTaskDelay(1);
       return false;
     }
     log_i("Connecting to MQTT...");
     if (connection_state_ == MQTT_CLIENT_CONNECTED) {
-      log_i(" already connected to MQTT ");
+      log_i("already connected to MQTT ");
       return true;
     }
     mqtt_client->setKeepAlive(90);
@@ -257,7 +262,7 @@ private:
   };
 
   AsyncMqttClient *mqtt_client;
-  Client *netclient;
+  Client *netclient=nullptr;
   void on_mqtt_connect(bool sessionPresent) {
 
     //      mqtt_client->onMessage(mqtt_callback);
@@ -381,8 +386,8 @@ private:
     }
   };
   std::queue<mqtt_msg> mqtt_messages;
-  volatile bool pending_data;
   SemaphoreHandle_t mutex_ = nullptr;
+  static SemaphoreHandle_t connect_mux_;
   TaskHandle_t pump_task_;
   TaskHandle_t connect_task_;
   TaskHandle_t task_to_notify_;
@@ -390,5 +395,4 @@ private:
   volatile MQTTClientState connection_state_;
 };
 SemaphoreHandle_t MqttPublish::connect_mux_ = nullptr;
-int MqttPublish::timeouts = 0;
 #endif

@@ -263,7 +263,6 @@ NimBLERemoteDescriptor *BleGattClient::remote_descriptor = nullptr;
 BLEAddress BleGattClient::device_addr_;
 BleGattClient::on_complete_callback BleGattClient::on_connect_ = nullptr;
 BleGattClient::on_complete_callback BleGattClient::on_disconnect_ = nullptr;
-notify_callback BleGattClient::on_notify_ = nullptr;
 std::list<BleGattClient::ble_notify_callback_t> BleGattClient::callbacks_;
 
 // BleGattClient::ClientCallbacks BleGattClient::client_cb_;

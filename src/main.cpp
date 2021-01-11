@@ -52,7 +52,7 @@ extern uint8_t max_scenes;
 MqttPublish mqtt;
 
 // provide a lamdba to call the mqtt client (decouples mqtt library used)
-RTC_DATA_ATTR LR_Ble_Device lr([](const char *topic, const char *data,
+RTC_DATA_ATTR LukeRobertsLamp lr([](const char *topic, const char *data,
                                   bool retained, uint8_t qos) {
   mqtt.queue(topic, data, retained, qos);
 });
@@ -340,7 +340,7 @@ void queue_ble_command(const String &value) {
   int len = value.length() / 2;
   char *p;
   unsigned long byte;
-  uint8_t ble_data[16];
+  uint8_t ble_data[32];
   char two_chars[3];
   const char *numptr = value.c_str();
   for (int i = 0; i < len && i < sizeof(ble_data); i++) {

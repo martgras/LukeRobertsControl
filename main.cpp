@@ -40,7 +40,7 @@ extern std::map<uint8_t, std::string> scenes;
 
 MqttPublish mqtt;
 
-class LR_Ble_Device {
+class LukeRobertsLamp {
 public:
   using Mqtt_Report_Function = std::function<void(int)>;
   using Task_function = std::function<void(void *)>;
@@ -58,7 +58,7 @@ public:
   const State &state() { return state_; }
   BleGattClient &client() { return gatt_client_; }
 
-  LR_Ble_Device() {
+  LukeRobertsLamp() {
 
     // Setup the cached commands
     //
@@ -317,7 +317,7 @@ private:
   State state_;
 };
 
-RTC_DATA_ATTR LR_Ble_Device lr;
+RTC_DATA_ATTR LukeRobertsLamp lr;
 AsyncWebServer server(80);
 
 void notFound(AsyncWebServerRequest *request) {

@@ -151,7 +151,51 @@ Because this mode doesn’t need an internal pull-up pins 34,35,36 or 39 can be 
 (see https://github.com/bxparks/AceButton/blob/develop/docs/resistor_ladder/README.md)
 
 
-##### Customize the button actions
+##### Advanced
+You can define up to 4 Resistor buttons. UP, DOWN, SWITCH and SWITCH. 
+if you are using a four button switch there are actualy 2 more levels available. When 2 buttons are pressed together the resistence is lower than the 2 signle buttons
+
+<img src="doc/6buttons.svg">
+
+If UP and DOWN are pressed together the resistence is 3.3k. If SW and SW2 are pressed together the resistence is 15k. Therefore 2 "virtual" buttons can be defined.
+
+These are the ADC Values 
+
+| Resistor | Calculated |	Measured |
+| ---------|------------|----------|
+| 3.3k     | 1016       | 970      |
+| 5.1k     | 1383       | 1450     |
+| 10k      | 2048	      | 1840     |
+| 15k      | 2458       | 2250     |
+| 22k      | 2816	      | 2620     |
+| 47k      | 3377	      | 3200     |
+
+````
+  -DRESISTOR_BUTTON_PIN=35        
+  ## Defines 6 buttons connected one GPIO using voltage dividers
+  ## A virtual pin triggered if RESISTOR_BUTTON_UP and DRESISTOR_BUTTON_DOWN are pressed together
+  -DRESISTOR_BUTTON_D1=970                    ## 3.3k (both buttons pressed 5.1 and 10k parallel)
+  -DRESISTOR_BUTTON_UP=1450                   ## 5.1k
+  -DRESISTOR_BUTTON_DOWN=1840                 ## 10k
+   ## A virtual pin triggered if RESISTOR_BUTTON_SWITCH and DRESISTOR_BUTTON_SWITCH2 are pressed together
+  -DRESISTOR_BUTTON_D2=2250                   ## 15k (both buttons pressed 22k and 47k parallel)
+  -DRESISTOR_BUTTON_SWITCH=2620               ## 22k
+  -DRESISTOR_BUTTON_SWITCH2=3220              ## 47k
+````
+In this example UP and DOWN use low resistor values and SW/SW2 higher values.  Because using 22k and 47k in parallel gives 15k we have a value for D2 that is still higher than DOWN
+
+**Note** you have to assign the levels ascending in the order given here. (Lowest value for RESISTOR_BUTTON_D1 and highest for RESISTOR_BUTTON_SWITCH2).
+The range of a button is defined by it's level and the difference to the next higher level.  A button is considered a match if the measured ADC value is between 
+(level - difference next level/2)and (level + /difference next level/2 ). Example for BUTTON_SWITCH: Difference to next level is 600. Every measured level between 2321 and 2919 is a match.
+
+
+If you want a buttons not to trigger don't define it or with level 0
+````
+  -DRESISTOR_BUTTON_D1=0
+`````
+
+
+#### Customize the button actions
 
 
 The timings for long press and double click can be modified
