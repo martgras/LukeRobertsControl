@@ -53,7 +53,7 @@ MqttPublish mqtt;
 
 // provide a lamdba to call the mqtt client (decouples mqtt library used)
 RTC_DATA_ATTR LukeRobertsLamp lr([](const char *topic, const char *data,
-                                  bool retained, uint8_t qos) {
+                                    bool retained, uint8_t qos) {
   mqtt.queue(topic, data, retained, qos);
 });
 
@@ -109,8 +109,12 @@ int set_dimmer_value(int new_level) {
     new_level = 0;
   }
   log_i("Set Dimmer Level to %d", new_level);
+  if (new_level == 0) { // dimmer level 0 is power off
+    lr.set_powerstate(false, true);
+  } else {
+    lr.set_dimmer(new_level, true);
+  }
 
-  lr.set_dimmer(new_level, true);
   return new_level;
 }
 
@@ -517,15 +521,17 @@ bool parse_command(String cmd, String value) {
 #endif
   } else if (cmd.equals("ota")) {
     AppUtils::setupOta();
-    mqtt.queue("tele/" HOSTNAME "/ota", "ota waiting.Listening on port 3232");
+    mqtt.queue("tele/" HOSTNAME "/ota",
+               "{\"ota\":true,\"state\":\"waiting\",\"port\":3232}");
     return true;
   } else if (cmd.equals("result") || cmd.equals("mqttping")) {
     last_mqttping = millis();
     log_d("got mqtt ping");
     mqtt.queue("tele/" HOSTNAME "/state",
-               lr.create_state_message(app.ota_started()
-                                           ? "{\"ota\":true,\"state\":\"waiting\",\"port\":3232}"
-                                           : nullptr));
+               lr.create_state_message(
+                   app.ota_started()
+                       ? "{\"ota\":true,\"state\":\"waiting\",\"port\":3232}"
+                       : nullptr));
     return true;
   } else if (cmd.equals("reboot") || cmd.equals("restart")) {
     log_i("------- REBOOT -------");
@@ -720,6 +726,8 @@ xTaskCreatePinnedToCore( [](void*){
                ROTARY_ENCODER_DIRECTION_COUNTER_CLOCKWISE) {
       step *= -1 * event.state.speed;
     }
+    if (dimmerlevel < 6)
+      dimmerlevel = 6 - step;
     set_dimmer_value(dimmerlevel + step);
 
   };
@@ -737,8 +745,42 @@ xTaskCreatePinnedToCore( [](void*){
 #ifndef LR_BLEADDRESS
   mqtt.queue("tele/" HOSTNAME "/BLEADDRESS", device_addr.toString().c_str());
 #endif
+
+  AppUtils::setupOta(
+      []() {
+        lr.client().disable_ble(true);
+        mqtt.queue("tele/" HOSTNAME "/debug/ota", "starting");
+      },
+      [](unsigned int progress, unsigned int total) {
+        static unsigned int lastvalue = 0xFFFF ; 
+        auto complete = (progress) / (total / 100);
+        log_i("Progress: %u%%\r", complete);
+  //      if (lastvalue != complete && (complete) % 10 == 0) {
+        if ( complete - lastvalue > 9) {          
+          char msg[32];
+          snprintf(msg, sizeof(msg), "progress=%u%%",  complete);
+          mqtt.queue("tele/" HOSTNAME "/debug/ota", msg);
+          lastvalue = complete ; 
+        }
+      },
+      [](const char *msg) {
+        mqtt.queue("tele/" HOSTNAME "/debug/ota", msg);
+        lr.client().disable_ble(false);
+      });
+
+  if (lr.state().power && lr.state().brightness < 5) {
+    lr.set_dimmer(5);
+  }
 }
 
+// Hack to inject mqtt debug messages
+void debug(const char *msg, long val = 10) {
+  /*
+    char buffer[128];
+    sniprintf(buffer,sizeof(buffer),"%s %ld",msg,val);
+    mqtt.queue("tele/" HOSTNAME "/debug",buffer);
+  */
+}
 void loop() {
   static unsigned long last_statemsg = 0;
   app_utils::AppUtils::loop();

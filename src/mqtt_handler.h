@@ -160,7 +160,6 @@ public:
     xSemaphoreGive(connect_mux_);
   }
 
-  
   void start() {
 
     mutex_ = xSemaphoreCreateMutex();
@@ -192,14 +191,14 @@ public:
 
   bool mqtt_connect() {
     xSemaphoreGive(connect_mux_);
-    return true ;
+    return true;
   }
-  
+
   bool mqtt_reconnect() {
-    
+
     if (!app_utils::AppUtils::network_connected()) {
       log_e("MQTT Connect: network not connected");
-      return false ;
+      return false;
     }
     static int timeouts;
     if (connection_state_ == MQTT_CLIENT_CONNECTING) {
@@ -262,7 +261,7 @@ private:
   };
 
   AsyncMqttClient *mqtt_client;
-  Client *netclient=nullptr;
+  Client *netclient = nullptr;
   void on_mqtt_connect(bool sessionPresent) {
 
     //      mqtt_client->onMessage(mqtt_callback);
@@ -327,22 +326,23 @@ private:
   }
 
   void send_pump_() {
+    static mqtt_msg item;
     while (true) {
       xSemaphoreTake(mutex_, portMAX_DELAY);
       // thread_notification = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
       if (connected() && connection_state_ == MQTT_CLIENT_CONNECTED) {
         while (!mqtt_messages.empty()) {
-          mqtt_msg item = mqtt_messages.front();
+          item = mqtt_messages.front();
           log_d("Publish: %s %s %d", item.topic, item.message, item.retained);
           if (mqtt_client->publish(item.topic, 0, item.retained,
                                    item.message)) {
-            vTaskDelay(50);
             mqtt_messages.pop();
             log_d("mqtt publish complete");
           } else {
             log_e("mqtt publish failed");
           }
+          vTaskDelay(10);
         }
       } else {
         if (connection_state_ != MQTT_CLIENT_CONNECTING) {

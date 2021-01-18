@@ -21,19 +21,23 @@ public:
   bool connect_to_server(BLEUUID charUUID,
                          on_complete_callback on_complete = nullptr);
 
-
   void start_ble_loop();
 
-  bool connected() { return client->isConnected(); }
+  bool connected() { return disabled_ || client->isConnected(); }
 
   bool write(const uint8_t *data, size_t length) {
     log_i("WriteBLE");
+    if (disabled_)
+      return true;
     return characteristic->writeValue(const_cast<uint8_t *>(data), length,
                                       true);
   }
 
   bool send(const uint8_t *data, size_t length) {
     log_d("BLE GATT SEND");
+    if (disabled_)
+      return true;
+
     int attempts = 5;
     while (connected_ != true && attempts-- > 0) {
       connected_ = connect_to_server(charUUID);
@@ -42,6 +46,7 @@ public:
       log_i("Connected to the BLE Server.");
       return characteristic->writeValue(const_cast<uint8_t *>(data), length,
                                         true);
+                                        delay(20);
     } else {
       log_e("Failed to connect to the ble server");
       NimBLEDevice::deleteClient(client);
@@ -88,7 +93,7 @@ public:
 
   bool send_queued();
   void loop(on_complete_callback on_send = nullptr);
-
+  int get_rssi() { return client->getRssi(); }
   static BLEAddress device_addr_;
 
   static BLEUUID serviceUUID;
@@ -244,6 +249,8 @@ public:
     return false;
   }
 
+  void disable_ble(bool keep_disabled = true) { disabled_ = keep_disabled; }
+
 private:
   /** Notification / Indication receiving handler callback */
   static void notifyCB(NimBLERemoteCharacteristic *pRemoteCharacteristic,
@@ -262,6 +269,8 @@ private:
         (char *)pData, (int)pData[0]);
 
     log_v("Client data received len: %d\n", length);
+
+    xSemaphoreGive(send_mux_);
     for (auto i = 0; i < length; i++) {
       log_v("Response byte[%d]: %d (0x%X)", i, pData[i], pData[i]);
     }
@@ -271,8 +280,9 @@ private:
       }
     }
   }
-
   ClientCallbacks client_cb_;
+  bool disabled_ = false;
+  static SemaphoreHandle_t send_mux_;
 };
 
 NimBLEAddress scan_for_device();

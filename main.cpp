@@ -792,7 +792,6 @@ RotaryEncoderButton rotary;
 #endif
 
 void setup() {
-
 //  esp_wifi_stop();
 #ifdef USE_ETHERNET
   app.set_hostname(HOSTNAME);

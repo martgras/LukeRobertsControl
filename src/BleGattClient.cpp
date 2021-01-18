@@ -13,6 +13,10 @@ void BleGattClient::init(BLEAddress device_addr, BLEUUID service_UUID) {
   //  device_addr_ = BLEAddress(LR_BLEADDRESS, 1);
   device_addr_ = device_addr;
   serviceUUID = service_UUID;
+  if (send_mux_ == nullptr) {
+    send_mux_ = xSemaphoreCreateBinary();
+  }
+
   NimBLEDevice::getScan()->setActiveScan(false);
   NimBLEDevice::getScan()->stop();
   initialized_ = true;
@@ -26,6 +30,8 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     log_e("BleGattClient not initalized");
     return false;
   }
+  if (disabled_) return true ;
+
   connected_ = false;
   /** No client to reuse? Create a new one. */
   if (!client) {
@@ -82,15 +88,15 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     }
   }
 
-   auto rssi = client->getRssi();
+  auto rssi = client->getRssi();
   log_i("Connected to: %s", client->getPeerAddress().toString().c_str());
-  log_i("RSSI: %d",rssi);
+  log_i("RSSI: %d", rssi);
   if (rssi == 0) {
-      NimBLEDevice::deleteClient(client);
-      log_e("BLE Connect %s", "Failed to connect rssi = 0, deleted client");
-      client = nullptr;
-      connected_ = false;
-      return false ; 
+    NimBLEDevice::deleteClient(client);
+    log_e("BLE Connect %s", "Failed to connect rssi = 0, deleted client");
+    client = nullptr;
+    connected_ = false;
+    return false;
   }
   /** Now we can read/write/subscribe the charateristics of the services we
    * are
@@ -100,8 +106,8 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
   if (service) { /** make sure it's not null */
     characteristic = service->getCharacteristic(charUUID);
   } else {
-    log_e("BLE Connect failed: service not found.");    
-    return false ;
+    log_e("BLE Connect failed: service not found.");
+    return false;
   }
 
   if (characteristic) { /** make sure it's not null */
@@ -138,7 +144,7 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
     }
   } else {
     log_e("BLE Connect failed: characteristic not found.");
-    return false ;
+    return false;
   }
   log_i("Freeheap = %lu", ESP.getFreeHeap());
   connected_ = true;
@@ -152,31 +158,33 @@ bool BleGattClient::connect_to_server(BLEUUID characteristicsUUID,
 bool BleGattClient::send_queued() {
   bool needs_result = false;
   static bool sending = false;
-
+  if (disabled_) return true ;
   if (!sending) {
     sending = true;
     for (auto &command : cached_commands) {
       if (command.is_dirty) {
         send(command.data, command.size);
         command.is_dirty = false;
-        // b.report_to_mqtt(0);
-        if (command.on_send) {
-          command.on_send(0);
+        // Wait for a notification to ack the request.
+        if (xSemaphoreTake(send_mux_, 5000 / portTICK_PERIOD_MS)) {
+          if (command.on_send) {
+            command.on_send(0);
+          }
         }
         needs_result = true;
-        delay(50);
       }
     }
     // Other pending commands
     while (!pending_commands.empty()) {
-      auto cmd = pending_commands.front();
+      auto &cmd = pending_commands.front();
       send(cmd.data, cmd.size);
       needs_result = true;
-      delay(100);
-      pending_commands.pop();
-      if (cmd.on_send) {
-        cmd.on_send(0);
+      if (xSemaphoreTake(send_mux_, 5000 / portTICK_PERIOD_MS)) {
+        if (cmd.on_send) {
+          cmd.on_send(0);
+        }
       }
+      pending_commands.pop();
     }
     sending = false;
   }
@@ -210,8 +218,9 @@ void BleGattClient::loop(on_complete_callback on_send) {
         log_w("Failed to connect to the BLE server (%d)", failed_connects);
         if (failed_connects > 20) {
           log_e("Failed to connect to the BLE server more than %d times. "
-                "Reboooting..",
+                "Rebooting..",
                 failed_connects);
+         // faster reboot                
           esp_sleep_enable_timer_wakeup(10);
           delay(100);
           esp_deep_sleep_start();
@@ -219,9 +228,9 @@ void BleGattClient::loop(on_complete_callback on_send) {
       }
       connecting = false;
     }
-    #if CORE_DEBUG_LEVEL > 3
+#if CORE_DEBUG_LEVEL > 3
     long start = millis();
-    #endif
+#endif
 
     if (connected()) {
       if (send_queued()) {
@@ -231,26 +240,23 @@ void BleGattClient::loop(on_complete_callback on_send) {
       }
       log_d("Command sent in %ld ms", millis() - start);
     }
-  }
+  } 
 }
 
 static void ble_loop_(void *this_ptr) {
-    auto *this_ = static_cast<BleGattClient *>(this_ptr);
-      if (this_ != nullptr) {
-        this_->loop();
-      }
+  auto *this_ = static_cast<BleGattClient *>(this_ptr);
+  if (this_ != nullptr) {
+    this_->loop();
+  }
 }
 
-void BleGattClient::start_ble_loop()
-{
-    xTaskCreatePinnedToCore([](void* this_ptr){
-      while(1) {
+void BleGattClient::start_ble_loop() {
+  xTaskCreatePinnedToCore([](void *this_ptr) {
+    while (1) {
       ble_loop_(this_ptr);
       vTaskDelay(50 / portTICK_PERIOD_MS);
-      }
-    }, "blesend", 8192, this, 1,
-                            nullptr,1);
-
+    }
+  }, "blesend", 8192, this, 1, nullptr, 1);
 }
 
 /*
@@ -266,9 +272,10 @@ BleGattClient::on_complete_callback BleGattClient::on_disconnect_ = nullptr;
 std::list<BleGattClient::ble_notify_callback_t> BleGattClient::callbacks_;
 
 // BleGattClient::ClientCallbacks BleGattClient::client_cb_;
-
 bool BleGattClient::initialized_ = false;
 // volatile bool BleGattClient::connected_ = false;
+SemaphoreHandle_t BleGattClient::send_mux_ = nullptr;
+
 #ifdef USE_SCENE_MAPPER
 std::vector<int> SceneMapper::brightness_map_ = {
     0, 63, 71, 39, 42, 48, 10, 100}; // Load the default values

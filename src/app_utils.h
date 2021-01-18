@@ -25,10 +25,13 @@ public:
   static void setup_time();
   static void loop();
   static void
-  setupOta(std::function<void(unsigned int, unsigned int)> on_progress =
+  setupOta(std::function<void()> on_start = []() {},
+           std::function<void(unsigned int, unsigned int)> on_progress =
                [](unsigned int progress, unsigned int total) {
                  log_i("Progress: %u%%\r", (progress / (total / 100)));
-               });
+               },
+          std::function<void(const char *)> on_end = [](const char *) {}
+               );
 #ifndef USE_ETHERNET
 
   bool request_wifi_start() { return start_wifi(); }

@@ -47,9 +47,12 @@ std::function<bool(void)> AppUtils::on_network_connect = []() { return true; };
 int AppUtils::wifi_signal_ = 0;
 
 void AppUtils::setupOta(
-    std::function<void(unsigned int, unsigned int)> on_progress) {
+    std::function<void()> on_start,
+    std::function<void(unsigned int, unsigned int)> on_progress,
+    std::function<void(const char*)> on_end
+    ) {
 
-  ArduinoOTA.onStart([]() {
+  ArduinoOTA.onStart([on_start]() {
               inOTA = true;
               String type;
               if (ArduinoOTA.getCommand() == U_FLASH)
@@ -60,16 +63,19 @@ void AppUtils::setupOta(
               // NOTE: if updating SPIFFS this would be the place to unmount
               // SPIFFS using SPIFFS.end()
               log_i("Start updating %s", type);
+              on_start();
             })
-      .onEnd([]() {
+      .onEnd([on_end]() {
         log_i("OTA End");
         inOTA = false;
+        on_end("OTA completed with success");
         delay(2000);
         ESP.restart();
       })
       .onProgress(on_progress)
-      .onError([](ota_error_t error) {
+      .onError([on_end](ota_error_t error) {
         log_e("Error[%u]: ", error);
+        on_end("OTA failed.");
         if (error == OTA_AUTH_ERROR)
           log_e("Auth Failed");
         else if (error == OTA_BEGIN_ERROR)

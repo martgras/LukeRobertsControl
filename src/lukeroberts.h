@@ -102,7 +102,7 @@ public:
 
   // Not sure why this doesn't work from constustructor
   void init() {
-    static const uint8_t id = 0xF2;
+    static const uint8_t id = 0xF2; // just a uniquie value
 
     // register a callback to handle response from command 0x9  (request current
     // values for brightness / ct)
@@ -403,23 +403,21 @@ public:
     // register a callback handler for the expected scene data
     if (!client.enable_callback_notification(kSceneId, true)) {
       client.register_callback_notification(
-          kSceneId,
-          [&new_scene_received, &last_reported_scene](
-              NimBLERemoteCharacteristic *pRemoteCharacteristic, uint8_t *pData,
-              size_t length, bool isNotify) {
+          kSceneId, [&new_scene_received, &last_reported_scene](
+                        NimBLERemoteCharacteristic *pRemoteCharacteristic,
+                        uint8_t *pData, size_t length, bool isNotify) {
             if (length > 4 && pRemoteCharacteristic->getUUID() == charUUID() &&
                 pData[0] == 0 && pData[1] == 1) {
               char tmp[64];
-              if (length > 63)
-                length = 63;
-              if (pData[1] == 1) {
-                strncpy(tmp, (const char *)&pData[3], length - 3);
-                tmp[length - 3] = '\0';
-                log_d("Scene notification : %d : %s", pData[2], tmp);
-                scenes[last_reported_scene] = tmp;
-                last_reported_scene = pData[2];
-                xSemaphoreGive(new_scene_received);
+              if (length > sizeof(tmp) - 1) {
+                length = sizeof(tmp) - 1;
               }
+              strncpy(tmp, (const char *)&pData[3], length - 3);
+              tmp[length - 3] = '\0';
+              log_d("Scene notification : %d : %s", pData[2], tmp);
+              scenes[last_reported_scene] = tmp;
+              last_reported_scene = pData[2];
+              xSemaphoreGive(new_scene_received);
             }
           });
     }
