@@ -4,7 +4,28 @@
 #define HA_ID HOSTNAME "_device"
 const int kConnectThreadIndex = 0;
 
-#include <AsyncMqttClient.h>
+#ifndef MQTTHOST
+// Dummy class to work without mqtt server
+
+class MqttPublish {
+public:
+  MqttPublish() {}
+  void recreate_client() {}
+  using mqtt_command_handler = std::function<bool(String, String)>;
+  void init(Client &network_client,
+            mqtt_command_handler command_handler = nullptr) {}
+  void start() {}
+  void queue(const char *topic, const char *message, bool retained = false,
+             uint8_t qos = 0) {}
+  bool connected() { return true; }
+  void disconnect() {}
+  bool mqtt_connect() { return true; }
+  static void loop() {}
+};
+
+#else
+
+#include <MQTT.h>
 
 // clang-format off
 /*
@@ -105,7 +126,7 @@ const char MQTT_DISCOVERY_SENSOR[] =
 
 class MqttPublish {
 public:
-  MqttPublish() { mqtt_client = new AsyncMqttClient(); }
+  MqttPublish() { mqtt_client = new MQTTClient(4096); }
   ~MqttPublish() {
     if (mqtt_client) {
       delete mqtt_client;
@@ -136,37 +157,31 @@ public:
             mqtt_command_handler command_handler = nullptr) {
 
     netclient = &network_client;
-    mqtt_client->setServer(MQTTHOST, MQTTPORT);
+    mqtt_client->begin(network_client);
+    mqtt_client->setHost(MQTTHOST, MQTTPORT);
     if (command_handler) {
       command_handler_ = std::move(command_handler);
-      mqtt_client->onMessage([&](char *topic, char *payload,
-                                 AsyncMqttClientMessageProperties properties,
-                                 size_t length, size_t index, size_t total) {
-        mqtt_callback(topic, payload, properties, length, index, total);
-      });
+      mqtt_client->onMessageAdvanced(
+          [&](MQTTClient *client, char *topic, char *payload, size_t length) {
+            mqtt_callback(client, topic, payload, length);
+          });
 
       if (connect_mux_ == nullptr) {
         connect_mux_ = xSemaphoreCreateBinary();
       }
     }
-
-    mqtt_client->onConnect(
-        [&](bool has_session) { on_mqtt_connect(has_session); });
-    mqtt_client->onDisconnect([&](AsyncMqttClientDisconnectReason reason) {
-      on_mqtt_disconnect(reason);
-
-    });
-
+    connection_state_ = MQTT_CLIENT_DISCONNECTED;
     xSemaphoreGive(connect_mux_);
   }
 
   void start() {
 
     mutex_ = xSemaphoreCreateMutex();
-    mqtt_client->onPublish([](uint16_t id) { log_d("Packet %d ack %d", id); });
+
     xTaskCreatePinnedToCore([](void *this_ptr) {
       while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        log_i("Reconnect task started");
         reinterpret_cast<MqttPublish *>(this_ptr)->mqtt_reconnect();
       }
     }, "mqtt_connect", 2048, this, 2, &connect_task_, 1);
@@ -190,66 +205,18 @@ public:
   }
 
   bool mqtt_connect() {
-    xSemaphoreGive(connect_mux_);
+    // xSemaphoreGive(connect_mux_);
+    return mqtt_reconnect();
     return true;
   }
 
-  bool mqtt_reconnect() {
-
-    if (!app_utils::AppUtils::network_connected()) {
-      log_e("MQTT Connect: network not connected");
-      return false;
+  void loop() {
+    // MQTTClientState connection_state_;
+    mqtt_client->loop();
+    if (connection_state_ == MQTT_CLIENT_CONNECTED &&
+        !mqtt_client->connected()) {
+      on_mqtt_disconnect(mqtt_client->lastError());
     }
-    static int timeouts;
-    if (connection_state_ == MQTT_CLIENT_CONNECTING) {
-      log_i("already connecting to MQTT ...");
-      vTaskDelay(1);
-      return false;
-    }
-    log_i("Connecting to MQTT...");
-    if (connection_state_ == MQTT_CLIENT_CONNECTED) {
-      log_i("already connected to MQTT ");
-      return true;
-    }
-    mqtt_client->setKeepAlive(90);
-    if (MQTTUSER != nullptr) {
-      mqtt_client->setCredentials(MQTTUSER, MQTTPASSWORD);
-    }
-    log_v("waiting for semaphore ...");
-    // Wait 35 seconds
-    if (xSemaphoreTake(connect_mux_, 35 * 1000 / portTICK_PERIOD_MS)) {
-      task_to_notify_ = xTaskGetCurrentTaskHandle();
-      mqtt_client->connect();
-      connection_state_ = MQTT_CLIENT_CONNECTING;
-      // Wait for on_connect to signal us when connection is complete
-      auto n = ulTaskNotifyTake(pdFALSE, 20 * 1000 / portTICK_PERIOD_MS);
-      if (n == 1) {
-        timeouts = 0;
-      } else {
-        // timeout restart after 5 in a row
-        log_w("mqtt connecting timed out");
-        if (timeouts++ > 5) {
-          esp_sleep_enable_timer_wakeup(10);
-          delay(100);
-          esp_deep_sleep_start();
-        } else {
-          vTaskDelay(10);
-          // retry connect
-          xTaskNotifyGive(connect_task_);
-        }
-      }
-      task_to_notify_ = nullptr;
-      xSemaphoreGive(connect_mux_);
-      return true;
-    } else {
-      // timeout waiting for semaphore
-      log_e("Timeout waiting for connect semaphore");
-      return false;
-    }
-  }
-
-  static void loop() {
-    // mqtt_client->loop();
   }
 
 private:
@@ -260,52 +227,60 @@ private:
     MQTT_CLIENT_CONNECTED,
   };
 
-  AsyncMqttClient *mqtt_client;
+  MQTTClient *mqtt_client;
   Client *netclient = nullptr;
   void on_mqtt_connect(bool sessionPresent) {
 
-    //      mqtt_client->onMessage(mqtt_callback);
     log_i("mqtt connected");
-    mqtt_client->setWill("tele/" HOSTNAME "/LWT", 0, true, "Offline");
+    char info[128];
+    mqtt_client->setWill("tele/" HOSTNAME "/LWT", "Offline", true, 0);
 
     mqtt_client->subscribe("cmnd/" HOSTNAME "/#", 2);
     log_i("mqtt subscribed to %s", "cmnd/" HOSTNAME);
     //    mqtt_client->subscribe("stat/" HOSTNAME "/RESULT", 0);
     //  log_i("mqtt subscribed to %s", "stat/" HOSTNAME "/RESULT");
-
-    mqtt_client->publish("homeassistant/light/" HA_ID "/light/config", 0, true,
-                         MQTT_DISCOVERY);
-    mqtt_client->publish("tele/" HOSTNAME "/LWT", 1, true, "Online");
-    mqtt_client->publish(
-        "tele/" HOSTNAME "/INFO", 0, false,
-        (String("{ \"Hostname\":\"" HOSTNAME "\" \"IPAddress\":\"") +
-         WiFi.localIP().toString() + ("\"}"))
-            .c_str());
+    log_i("mqtt %d", strlen(MQTT_DISCOVERY));
+    mqtt_client->publish("homeassistant/light/" HA_ID "/light/config",
+                         MQTT_DISCOVERY, true, 0);
+    mqtt_client->publish("tele/" HOSTNAME "/LWT", "Online", true, 0);
+    auto local_ip = WiFi.localIP();
+    snprintf(info, sizeof(info),
+             "{\"Hostname\":\"" HOSTNAME "\",\"IPAddress\":\"%u.%u.%u.%u\"}",
+             local_ip[0], local_ip[1], local_ip[2], local_ip[3]);
+    mqtt_client->publish("tele/" HOSTNAME "/INFO", info, false, 0);
     connection_state_ = MQTT_CLIENT_CONNECTED;
-    xTaskNotifyGive(task_to_notify_);
   }
 
-  void on_mqtt_disconnect(AsyncMqttClientDisconnectReason reason) {
+  void on_mqtt_disconnect(lwmqtt_err_t reason) {
     connection_state_ = MQTT_CLIENT_DISCONNECTED;
     log_w("Mqtt was disconnected %d", reason);
-    recreate_client();
     delay(100);
     xTaskNotifyGive(connect_task_);
   }
 
-  void mqtt_callback(char *topic, char *payload,
-                     AsyncMqttClientMessageProperties properties, size_t length,
-                     size_t index, size_t total) {
+  void mqtt_callback(MQTTClient *client, char *topic, char *payload,
+                     size_t length) {
 
-    String cmd;
+    // String cmd;
     char message[kMaxMessageSize];
+    char cmd[kMaxTopicSize];
     // the last segment of all subscribed topics/uris is the command
     char *pch = strrchr(topic, '/');
     if (pch && pch[1]) {
-      cmd = pch + 1;
+      pch++;
     } else {
-      cmd = topic;
+      pch = topic;
     }
+    snprintf(cmd, sizeof(cmd), "%s", pch);
+    // safe assumption that cmd is 0 terminated
+    pch = cmd;
+    // lopwercase string and rtim space
+    while (*pch != '\0' && *pch != ' ') {
+      *pch = std::tolower(*pch);
+      pch++;
+    }
+    // pch either points to a space or the terminating 0
+    *pch = '\0';
 
     log_i("Message arrived in topic: %s", topic);
 
@@ -317,9 +292,7 @@ private:
       message[i] = std::tolower(payload[i]);
     }
     message[length] = '\0';
-    cmd.trim();
-    cmd.toLowerCase();
-    log_i("mqtt message: %s %s", cmd.c_str(), message);
+    log_i("mqtt message: %s %s", cmd, message);
     if (command_handler_) {
       command_handler_(cmd, message);
     }
@@ -335,18 +308,14 @@ private:
         while (!mqtt_messages.empty()) {
           item = mqtt_messages.front();
           log_d("Publish: %s %s %d", item.topic, item.message, item.retained);
-          if (mqtt_client->publish(item.topic, 0, item.retained,
-                                   item.message)) {
+          if (mqtt_client->publish(item.topic, item.message, item.retained,
+                                   0)) {
             mqtt_messages.pop();
             log_d("mqtt publish complete");
           } else {
             log_e("mqtt publish failed");
           }
           vTaskDelay(10);
-        }
-      } else {
-        if (connection_state_ != MQTT_CLIENT_CONNECTING) {
-          //      mqtt_reconnect();
         }
       }
       vTaskDelay(100);
@@ -359,6 +328,49 @@ private:
     auto *this_ = reinterpret_cast<MqttPublish *>(this_ptr);
     if (this_ != nullptr) {
       this_->send_pump_();
+    }
+  }
+
+  bool mqtt_reconnect() {
+
+    if (!app_utils::AppUtils::network_connected()) {
+      log_e("MQTT Connect: network not connected");
+      return false;
+    }
+
+    log_i("Connecting to MQTT...");
+    if (connection_state_ == MQTT_CLIENT_CONNECTED) {
+      log_i("already connected to MQTT ");
+      return true;
+    }
+
+    if (connection_state_ == MQTT_CLIENT_CONNECTING) {
+      log_i("already connecting to MQTT ...");
+      vTaskDelay(1);
+      return false;
+    }
+    connection_state_ = MQTT_CLIENT_CONNECTING;
+
+    mqtt_client->setKeepAlive(90);
+
+    bool result = false;
+    // retry 10 times start with 250 ms delay (doubles for every retry)
+    result = app_utils::retry(10, 250, [this]() {
+      if (MQTTUSER != nullptr) {
+        return mqtt_client->connect(HOSTNAME, MQTTUSER, MQTTPASSWORD);
+      } else {
+        return mqtt_client->connect(HOSTNAME);
+      }
+    }, true);
+    if (result) {
+      on_mqtt_connect(true);
+      log_i("Connected to mqtt broker " MQTTHOST);
+      connection_state_ = MQTT_CLIENT_CONNECTED;
+      return true;
+    } else {
+      log_e("Unable to connect to mqtt");
+      connection_state_ = MQTT_CLIENT_DISCONNECTED;
+      return false;
     }
   }
 
@@ -390,9 +402,11 @@ private:
   static SemaphoreHandle_t connect_mux_;
   TaskHandle_t pump_task_;
   TaskHandle_t connect_task_;
-  TaskHandle_t task_to_notify_;
+
   mqtt_command_handler command_handler_;
   volatile MQTTClientState connection_state_;
 };
 SemaphoreHandle_t MqttPublish::connect_mux_ = nullptr;
+#endif
+
 #endif

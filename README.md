@@ -2,8 +2,6 @@
 
 ## A MQTT and HTTP gateway to control a Luke Roberts Model F Lamp
 
-> **⚠ WARNING: Work in progress neither the docs nor the code is complete yet*
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
@@ -288,6 +286,10 @@ All settings can be combined if different GPIO’s are used.
     -DDOUBLE_KLICK_INTERVAL=500
 
 ````
+
+If you are getting compiler errors due to command line argument too you the buttons can be defined in my_buttondef.h instead.
+See  my_buttondef.h.sample for an example
+
 ###  Using a wireless rotary (or switch).
 The wireless rotary sends the events to a smart home server that will then control the lamp using MQTT or HTTP
 In my case I use a [Homematic IP Rotary Button](https://www.homematic-ip.com/en/products/detail/homematic-ip-rotary-button.html).

@@ -30,8 +30,7 @@ public:
                [](unsigned int progress, unsigned int total) {
                  log_i("Progress: %u%%\r", (progress / (total / 100)));
                },
-          std::function<void(const char *)> on_end = [](const char *) {}
-               );
+           std::function<void(const char *)> on_end = [](const char *) {});
 #ifndef USE_ETHERNET
 
   bool request_wifi_start() { return start_wifi(); }
@@ -108,4 +107,7 @@ long get_jsonvalue(const char *json, const char *name);
 bool get_jsonvalue(const char *json, const char *name, long &result);
 bool get_jsonvalue(const char *json, const char *name, char *result,
                    size_t result_max);
+
+bool retry(int max_retries, uint32_t inital_delay_ms,
+           std::function<bool()> action, bool reboot_on_failure = false);
 }

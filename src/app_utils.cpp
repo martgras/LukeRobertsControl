@@ -49,8 +49,7 @@ int AppUtils::wifi_signal_ = 0;
 void AppUtils::setupOta(
     std::function<void()> on_start,
     std::function<void(unsigned int, unsigned int)> on_progress,
-    std::function<void(const char*)> on_end
-    ) {
+    std::function<void(const char *)> on_end) {
 
   ArduinoOTA.onStart([on_start]() {
               inOTA = true;
@@ -87,8 +86,7 @@ void AppUtils::setupOta(
         else if (error == OTA_END_ERROR)
           log_e("End Failed");
       });
-  log_i("- no services advertised");
-  log_i("\nReady for OTA ");
+  log_i("- Ready for OTA ");
   String otaname = hostname_ + domainname_;
   ArduinoOTA.setHostname(otaname.c_str());
   ArduinoOTA.begin();
@@ -217,6 +215,7 @@ bool AppUtils::start_wifi() {
   WiFi.mode(WIFI_STA); // switch off AP
   WiFi.setAutoConnect(false);
   WiFi.setAutoReconnect(false);
+  //  WiFi.setSleep(false);
   WiFi.persistent(false);
 
   // Speeds up Wifi connection quite a bit for my setup (Fritzbox used)
@@ -527,4 +526,21 @@ bool get_jsonvalue(const char *json, const char *name, char *result,
   return r;
 }
 
-} // namepsace deepsleep_app
+bool retry(int max_retries, uint32_t inital_delay_ms,
+           std::function<bool()> action, bool reboot_on_failure) {
+  uint32_t delay_ms = inital_delay_ms;
+  while (max_retries--) {
+    if (action()) {
+      return true;
+    }
+    vTaskDelay(delay_ms/ portTICK_PERIOD_MS);
+    delay_ms <<= 1; // double delay time
+  }
+  if (reboot_on_failure) {
+    log_e("retries failed - rebooting");
+    AppUtils::fast_restart();
+  }
+  return false;
+}
+
+} // namepsace app_utils
