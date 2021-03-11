@@ -335,12 +335,12 @@ public:
 NimBLEAddress BleScanner::device_address;
 BLEUUID BleScanner::searched_serviceUUID;
 
-NimBLEAddress scan_for_device() {
+NimBLEAddress scan_for_device(BLEUUID svcUUID) {
 
   NimBLEDevice::init("");
 
   static NimBLEAddress adr;
-  adr = BleScanner::scan(serviceUUID);
+  adr = BleScanner::scan(svcUUID);
 
   return adr;
 }

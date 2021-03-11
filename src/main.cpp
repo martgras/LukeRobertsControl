@@ -537,7 +537,7 @@ bool parse_command(String cmd, String value) {
     log_i("------- REBOOT -------");
     yield();
     delay(500);
-    ESP.restart();
+    app.fast_restart();
   } else if (cmd.equals("blecustom") && has_value) {
     queue_ble_command(value);
   }
@@ -629,9 +629,9 @@ xTaskCreatePinnedToCore( [](void*){
 #else
 #pragma message(                                                               \
     "NO BLE Device Address provided. Scanning for a Luke Roberts Lamp during startup")
-  auto device_addr = scan_for_device();
+  auto device_addr = scan_for_device(serviceUUID);
   log_i("DEVICE : %s", device_addr.toString().c_str());
-  lr.client().init(device_addr);
+  lr.client().init(device_addr, serviceUUID);
 #endif
   lr.init();
   // Route for root / web page
@@ -664,23 +664,17 @@ xTaskCreatePinnedToCore( [](void*){
   server.onNotFound(notFound);
   server.begin();
 
-  int mqtt_reconnects = 0;
   last_mqttping = millis();
   mqtt.start();
-  while (!mqtt.connected()) {
-    if (!mqtt.mqtt_reconnect()) {
-      delay(500);
-      if (!mqtt.mqtt_reconnect() && mqtt_reconnects++ > 30) {
-        log_e("mqtt retry count exceeded - rebooting");
-        delay(100);
-        app.fast_restart();
-      }
-    }
+  if (!mqtt.mqtt_connect()) {
+    log_i("mqtt connect failed");
   }
-
-  app.on_network_connect = std::bind(&MqttPublish::mqtt_reconnect, &mqtt);
+  app.on_network_connect = std::bind(&MqttPublish::mqtt_connect, &mqtt);
   mqtt.queue("tele/" HOSTNAME "/LWT", "Online", true);
 
+#if TESTONLYMQTT == 1
+  lr.client().disable_ble(true);
+#else
   bool result;
   int attempts = 0;
   while (!(result = lr.client().connect_to_server(
@@ -745,22 +739,21 @@ xTaskCreatePinnedToCore( [](void*){
 #ifndef LR_BLEADDRESS
   mqtt.queue("tele/" HOSTNAME "/BLEADDRESS", device_addr.toString().c_str());
 #endif
-
+#endif
   AppUtils::setupOta(
       []() {
         lr.client().disable_ble(true);
         mqtt.queue("tele/" HOSTNAME "/debug/ota", "starting");
       },
       [](unsigned int progress, unsigned int total) {
-        static unsigned int lastvalue = 0xFFFF ; 
+        static unsigned int lastvalue = 0xFFFF;
         auto complete = (progress) / (total / 100);
         log_i("Progress: %u%%\r", complete);
-  //      if (lastvalue != complete && (complete) % 10 == 0) {
-        if ( complete - lastvalue > 9) {          
+        if (complete - lastvalue > 9) {
           char msg[32];
-          snprintf(msg, sizeof(msg), "progress=%u%%",  complete);
+          snprintf(msg, sizeof(msg), "progress=%u%%", complete);
           mqtt.queue("tele/" HOSTNAME "/debug/ota", msg);
-          lastvalue = complete ; 
+          lastvalue = complete;
         }
       },
       [](const char *msg) {

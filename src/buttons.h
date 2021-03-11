@@ -707,8 +707,8 @@ static AceButton dummy_button(6, HIGH,
 
   resistor_button_config.setFeature(ButtonConfig::kFeatureRepeatPress);
   resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
-  resistor_button_config.setFeature(ButtonConfig::kFeatureDoubleClick);
-  resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
+//  resistor_button_config.setFeature(ButtonConfig::kFeatureDoubleClick);
+//  resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
   resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY);
   resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL);
   resistor_button_config.setEventHandler(handle_button_event);

@@ -285,4 +285,4 @@ private:
   static SemaphoreHandle_t send_mux_;
 };
 
-NimBLEAddress scan_for_device();
+NimBLEAddress scan_for_device(BLEUUID svcUUID);
