@@ -40,7 +40,7 @@ build_flags = -DWIFISID='"mywifi"'
             -DSINGLE_BUTTON_DOUBLE_CLICK_ACTION=kNextScene
             -DSINGLE_BUTTON_STEP_VALUE=20
 ;           -DRESISTOR_BUTTON_PIN=35                    ## Defines 3 buttons connected one GPIO using voltage dividers
-            -RESISTOR_BUTTON_UP_CLICK_ACTION=kChangeBrightness
+;           -DRESISTOR_BUTTON_UP_CLICK_ACTION=kChangeBrightness
 ;            ## A virtual pin triggered if RESISTOR_BUTTON_UP and DRESISTOR_BUTTON_DOWN are pressed together
 ;            -DRESISTOR_BUTTON_D1=970                    ## 3.3k (both buttons pressed 5.1 and 10k parallel)
 ;            -DRESISTOR_BUTTON_UP=1450                   ## 5.1k
