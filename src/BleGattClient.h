@@ -5,8 +5,14 @@
 //
 //
 //
-#include <queue>
 #include <NimBLEDevice.h>
+#include <queue>
+
+#ifndef BLE_PIN
+static const int kBle_Pin = 0;
+#else
+static const int kBle_Pin = BLE_PIN;
+#endif
 
 class BleGattClient {
 
@@ -46,7 +52,7 @@ public:
       log_i("Connected to the BLE Server.");
       return characteristic->writeValue(const_cast<uint8_t *>(data), length,
                                         true);
-                                        delay(20);
+      delay(20);
     } else {
       log_e("Failed to connect to the ble server");
       NimBLEDevice::deleteClient(client);
@@ -178,7 +184,7 @@ private:
     uint32_t onPassKeyRequest() {
       log_i("Client Passkey Request");
       /** return the passkey to send to the server */
-      return 123456;
+      return kBle_Pin;
     };
 
     bool onConfirmPIN(uint32_t pass_key) {

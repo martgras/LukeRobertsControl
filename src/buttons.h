@@ -4,7 +4,6 @@
 #include "my_buttondef.h"
 #endif
 
-
 namespace button_handler {
 enum button_function_codes {
   kNoop = 0,
@@ -44,6 +43,11 @@ every button. Default is 10 for up and -10 for down
 #endif
 
 #if defined(ROTARY_BUTTON_PIN)
+
+#ifndef ROTARY_BUTTON_PIN_PULLUP
+#define ROTARY_BUTTON_PIN_PULLUP true
+#endif
+
 static const uint8_t rotary_button_pin = ROTARY_BUTTON_PIN;
 
 static const button_function_codes rotary_button_pin_click_action =
@@ -79,6 +83,11 @@ static const uint8_t rotary_button_pin = GPIO_NUM_0;
 #endif
 
 #ifdef SINGLE_BUTTON_PIN
+
+#ifndef SINGLE_BUTTON_PIN_PULLUP
+#define SINGLE_BUTTON_PIN_PULLUP true
+#endif
+
 static const uint8_t single_button_pin = SINGLE_BUTTON_PIN;
 
 static const button_function_codes single_button_click_action =
@@ -180,7 +189,9 @@ static const uint8_t button_down_pin = GPIO_NUM_0;
 #endif
 
 #if defined(RESISTOR_BUTTON_PIN)
-
+#ifndef RESISTOR_BUTTON_PIN_PULLUP
+#define RESISTOR_BUTTON_PIN_PULLUP true
+#endif
 #if RESISTOR_BUTTON_SWITCH == 0
 #undef RESISTOR_BUTTON_SWITCH
 #endif
@@ -451,6 +462,14 @@ SemaphoreHandle_t button_mux_ = nullptr;
 
 #endif
 
+void set_pin_mode(uint8_t pin, bool pullup = true) {
+  if (pin > 33)
+    pullup = false;
+  pinMode(pin, pullup ? INPUT_PULLUP : INPUT);
+}
+
+#define SETUP_PIN(x) ({ set_pin_mode((x), (x##_PULLUP)); })
+
 void setup_buttons() {
 #if defined(RESISTOR_BUTTON_D1) || defined(RESISTOR_BUTTON_UP) ||              \
     defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||            \
@@ -490,7 +509,7 @@ void setup_buttons() {
 
 #endif
 #if defined(ROTARY_BUTTON_PIN)
-  pinMode(ROTARY_BUTTON_PIN, INPUT_PULLUP);
+  SETUP_PIN(ROTARY_BUTTON_PIN);
   static ace_button::AceButton rotary_button;
   rotary_button.setButtonConfig(&button_cfg);
   rotary_button.init(ROTARY_BUTTON_PIN, HIGH, ROTARY_BUTTON_PIN);
@@ -508,6 +527,9 @@ void setup_buttons() {
 
 // If BUTTON_DOWN_PIN is defined use regular buttons instead of Ladder Buttons
 #if defined(BUTTON_DOWN_PIN)
+#ifndef BUTTON_DOWN_PIN_PULLUP
+#define BUTTON_DOWN_PIN_PULLUP true
+#endif
 
 #define BUTTON_DOWN_ACTION_PRESS kChangeBrightness
 #define BUTTON_DOWN_STEP -5
@@ -515,9 +537,9 @@ void setup_buttons() {
 #define BUTTON_UP_ACTION_LONG_PRESS kNextScene
 #define BUTTON_UP_STEP 5
 
-  pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
+  SETUP_PIN(BUTTON_DOWN_PIN);
   static ace_button::AceButton down_button;
-  pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
+  set_pin_mode(BUTTON_UP_PIN, true);
   static ace_button::AceButton up_button;
   down_button.setButtonConfig(&button_cfg);
   up_button.setButtonConfig(&button_cfg);
@@ -547,7 +569,7 @@ void setup_buttons() {
 #endif
 
 #if defined(SINGLE_BUTTON_PIN)
-  pinMode(SINGLE_BUTTON_PIN, INPUT_PULLUP);
+  SETUP_PIN(SINGLE_BUTTON_PIN);
   static ace_button::AceButton single_button;
   static ace_button::ButtonConfig single_cfg;
 
@@ -609,10 +631,7 @@ void setup_buttons() {
 #endif
 
 #if defined(RESISTOR_BUTTON_PIN)
-
-
-  pinMode(RESISTOR_BUTTON_PIN, INPUT);
-
+  SETUP_PIN(RESISTOR_BUTTON_PIN);
 
 #if defined(RESISTOR_BUTTON_D1)
 #define RESISTOR_BUTTON_D1_VPIN 0
@@ -649,8 +668,7 @@ void setup_buttons() {
                                  RESISTOR_BUTTON_SWITCH2_VPIN | 0x80);
 #endif
 
-static AceButton dummy_button(6, HIGH,
-                                 6 | 0x80);
+  static AceButton dummy_button(6, HIGH, 6 | 0x80);
 
   // Hard to read with the #define handling to remove unused buttons
   static AceButton *const resistor_buttons[] = {
@@ -673,7 +691,7 @@ static AceButton dummy_button(6, HIGH,
 #if defined(RESISTOR_BUTTON_SWITCH2)
     &resistor_sw_2,
 #endif
-    &dummy_button   // avoid wrong event from last button 
+    &dummy_button // avoid wrong event from last button
   };
 
   // Note: levels must be sorted asc.
@@ -697,8 +715,9 @@ static AceButton dummy_button(6, HIGH,
 #ifdef RESISTOR_BUTTON_SWITCH2
     RESISTOR_BUTTON_SWITCH2,
 #endif
-    3400,4095  // lots of noise 5k instead of 10k pullup may be better .
-               // the dummy button "swallows" the readings down to ~3300 
+    3400,
+    4095 // lots of noise 5k instead of 10k pullup may be better .
+         // the dummy button "swallows" the readings down to ~3300
   };
 
   static LadderButtonConfig resistor_button_config(
@@ -706,9 +725,10 @@ static AceButton dummy_button(6, HIGH,
       sizeof(resistor_buttons) / sizeof(resistor_buttons[0]), resistor_buttons);
 
   resistor_button_config.setFeature(ButtonConfig::kFeatureRepeatPress);
-  resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterRepeatPress);
-//  resistor_button_config.setFeature(ButtonConfig::kFeatureDoubleClick);
-//  resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
+  resistor_button_config.setFeature(
+      ButtonConfig::kFeatureSuppressAfterRepeatPress);
+  //  resistor_button_config.setFeature(ButtonConfig::kFeatureDoubleClick);
+  //  resistor_button_config.setFeature(ButtonConfig::kFeatureSuppressAfterDoubleClick);
   resistor_button_config.setRepeatPressDelay(LONG_PRESS_DELAY);
   resistor_button_config.setRepeatPressInterval(LONG_PRESS_INTERVAL);
   resistor_button_config.setEventHandler(handle_button_event);
@@ -795,40 +815,38 @@ static AceButton dummy_button(6, HIGH,
 
   b = &buttons[button_idx++];
   b->id = dummy_button.getId();
-  b->event_handlers[AceButton::kEventReleased] =
-      button_functions[kNoop];
-  b->event_handlers[AceButton::kEventRepeatPressed] =
-      button_functions[kNoop];
-  b->event_handlers[AceButton::kEventDoubleClicked] =
-      button_functions[kNoop];
+  b->event_handlers[AceButton::kEventReleased] = button_functions[kNoop];
+  b->event_handlers[AceButton::kEventRepeatPressed] = button_functions[kNoop];
+  b->event_handlers[AceButton::kEventDoubleClicked] = button_functions[kNoop];
   b->step_value = 0;
-
 
 #endif
 
 #ifdef SWITCH_PIN
-  pinMode(SWITCH_PIN, INPUT_PULLUP);
+  set_pin_mode(SWITCH_PIN, true);
   attachInterruptArg(SWITCH_PIN, isr_extraswitch, (void *)&lr, CHANGE);
 #endif
 
-  xTaskCreate([&](void *) {
-    while (1) {
+  xTaskCreate(
+      [&](void *) {
+        while (1) {
 #ifdef ROTARY_BUTTON_PIN
-      rotary_button.check();
+          rotary_button.check();
 #endif
 #ifdef SINGLE_BUTTON_PIN
-      single_button.check();
+          single_button.check();
 #endif
 #ifdef RESISTOR_BUTTON_PIN
-      resistor_button_config.checkButtons();
+          resistor_button_config.checkButtons();
 #endif
 #ifdef BUTTON_DOWN_PIN
-      down_button.check();
-      up_button.check();
+          down_button.check();
+          up_button.check();
 #endif
-      vTaskDelay(5 / portTICK_PERIOD_MS);
-    }
-  }, "acebuttoncheck", 4096, nullptr, 2, nullptr);
+          vTaskDelay(5 / portTICK_PERIOD_MS);
+        }
+      },
+      "acebuttoncheck", 4096, nullptr, 2, nullptr);
 
   if (button_mux_) {
     vSemaphoreDelete(button_mux_);
@@ -845,9 +863,9 @@ void handle_button_event(AceButton *button, uint8_t eventType,
   log_d("Button event PIN=%d, ID: %d event %d", pin, id, eventType);
 #if (CORE_DEBUG_LEVEL > 6)
   char msg[64];
-  sprintf(msg,"Button event PIN=%d, ID: %d event %d", pin, id, eventType);
-    mqtt.queue("debug/" HOSTNAME "/message", msg, true);
-#endif    
+  sprintf(msg, "Button event PIN=%d, ID: %d event %d", pin, id, eventType);
+  mqtt.queue("debug/" HOSTNAME "/message", msg, true);
+#endif
   if (pin == GPIO_NUM_0 && id == 0) {
     return;
   }
@@ -869,4 +887,4 @@ void handle_button_event(AceButton *button, uint8_t eventType,
        // defined(RESISTOR_BUTTON_DOWN) || defined(RESISTOR_BUTTON_D2) ||
        // defined(RESISTOR_BUTTON_SWITCH) || defined(RESISTOR_BUTTON_SWITCH2)
 }
-}
+} // namespace button_handler

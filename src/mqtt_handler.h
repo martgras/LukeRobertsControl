@@ -151,7 +151,7 @@ public:
     */
   }
 
-  using mqtt_command_handler = std::function<bool(String, String)>;
+  using mqtt_command_handler = std::function<bool(const char *, const char *)>;
 
   void init(Client &network_client,
             mqtt_command_handler command_handler = nullptr) {
